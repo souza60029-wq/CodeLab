@@ -1,25 +1,18 @@
 import Foundation
 
 enum Templates {
-    static func files(_ l: Lang, _ name: String) -> [String: String] {
+    static func files(_ l: Lang, _ name: String, kotlin: Bool = false, minSdk: Int = 24) -> [String: String] {
         let bundleSuffix = name.lowercased()
             .replacingOccurrences(of: "-", with: "")
             .replacingOccurrences(of: "_", with: "")
         switch l {
         case .cpp:
             return [
-                "main.cpp": "#include <iostream>\n\nint main() {\n    std::cout << \"Ola, mundo!\" << std::endl;\n    return 0;\n}\n",
-                ".github/workflows/build.yml": cppWF
+                "main.cpp": "#include <iostream>\n\nint main() {\n    std::cout << \"Ola, mundo!\" << std::endl;\n    return 0;\n}\n"
             ]
         case .java:
             return [
-                "Main.java": "public class Main {\n    public static void main(String[] args) {\n        System.out.println(\"Ola, mundo!\");\n    }\n}\n",
-                ".github/workflows/build.yml": javaWF
-            ]
-        case .kotlin:
-            return [
-                "Main.kt": "fun main() {\n    println(\"Ola, mundo!\")\n}\n",
-                ".github/workflows/build.yml": kotlinWF
+                "Main.java": "public class Main {\n    public static void main(String[] args) {\n        System.out.println(\"Ola, mundo!\");\n    }\n}\n"
             ]
         case .godot:
             return [
@@ -28,15 +21,7 @@ enum Templates {
                 ".github/workflows/build.yml": godotWF
             ]
         case .android:
-            return [
-                "settings.gradle": "pluginManagement {\n    repositories { google(); mavenCentral(); gradlePluginPortal() }\n}\ndependencyResolutionManagement {\n    repositories { google(); mavenCentral() }\n}\nrootProject.name = \"\(name)\"\ninclude ':app'\n",
-                "build.gradle": "plugins {\n    id 'com.android.application' version '8.2.0' apply false\n}\n",
-                "gradle.properties": "android.useAndroidX=true\norg.gradle.jvmargs=-Xmx2g\n",
-                "app/build.gradle": "plugins {\n    id 'com.android.application'\n}\n\nandroid {\n    namespace 'com.example.app'\n    compileSdk 34\n    defaultConfig {\n        applicationId \"com.example.app\"\n        minSdk 24\n        targetSdk 34\n        versionCode 1\n        versionName \"1.0\"\n    }\n    compileOptions {\n        sourceCompatibility JavaVersion.VERSION_17\n        targetCompatibility JavaVersion.VERSION_17\n    }\n}\n",
-                "app/src/main/AndroidManifest.xml": "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<manifest xmlns:android=\"http://schemas.android.com/apk/res/android\">\n    <application android:label=\"\(name)\">\n        <activity android:name=\".MainActivity\" android:exported=\"true\">\n            <intent-filter>\n                <action android:name=\"android.intent.action.MAIN\" />\n                <category android:name=\"android.intent.category.LAUNCHER\" />\n            </intent-filter>\n        </activity>\n    </application>\n</manifest>\n",
-                "app/src/main/java/com/example/app/MainActivity.java": "package com.example.app;\n\nimport android.app.Activity;\nimport android.os.Bundle;\nimport android.widget.TextView;\n\npublic class MainActivity extends Activity {\n    @Override\n    protected void onCreate(Bundle savedInstanceState) {\n        super.onCreate(savedInstanceState);\n        TextView tv = new TextView(this);\n        tv.setText(\"Ola, Android!\");\n        tv.setTextSize(24);\n        setContentView(tv);\n    }\n}\n",
-                ".github/workflows/build.yml": androidWF
-            ]
+            return android(name, kotlin: kotlin, minSdk: minSdk)
         case .ios:
             return [
                 "project.yml": "name: \(name)\noptions:\n  bundleIdPrefix: com.rhuan\n  deploymentTarget:\n    iOS: \"15.0\"\ntargets:\n  \(name):\n    type: application\n    platform: iOS\n    sources: [App]\n    info:\n      path: Config/Info.plist\n      properties:\n        UILaunchScreen: {}\n    settings:\n      base:\n        PRODUCT_BUNDLE_IDENTIFIER: com.rhuan.\(bundleSuffix)\n        SWIFT_VERSION: \"5.0\"\n",
@@ -46,60 +31,114 @@ enum Templates {
         }
     }
 
-    static let cppWF = #"""
-name: Build
-on: workflow_dispatch
-jobs:
-  build:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Compilar e executar
-        run: |
-          g++ -std=c++17 -Wall -Wextra $(find . -name '*.cpp') -I. -o app
-          ./app
-"""#
 
-    static let javaWF = #"""
-name: Build
-on: workflow_dispatch
-jobs:
-  build:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: 17
-      - name: Compilar e executar
-        run: |
-          mkdir -p out
-          javac $(find . -name '*.java') -d out
-          java -cp out Main
-"""#
+    static func android(_ name: String, kotlin: Bool, minSdk: Int) -> [String: String] {
+        var f: [String: String] = [:]
+        f["settings.gradle"] = #"""
+pluginManagement {
+    repositories { google(); mavenCentral(); gradlePluginPortal() }
+}
+dependencyResolutionManagement {
+    repositories { google(); mavenCentral() }
+}
+rootProject.name = "\#(name)"
+include ':app'
 
-    static let kotlinWF = #"""
-name: Build
-on: workflow_dispatch
-jobs:
-  build:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: 17
-      - name: Instalar kotlinc
-        run: |
-          curl -sLO https://github.com/JetBrains/kotlin/releases/download/v1.9.22/kotlin-compiler-1.9.22.zip
-          unzip -q kotlin-compiler-1.9.22.zip
-      - name: Compilar e executar
-        run: |
-          ./kotlinc/bin/kotlinc $(find . -name '*.kt') -include-runtime -d app.jar
-          java -jar app.jar
 """#
+        f["build.gradle"] = kotlin ? #"""
+plugins {
+    id 'com.android.application' version '8.2.0' apply false
+    id 'org.jetbrains.kotlin.android' version '1.9.22' apply false
+}
+
+"""# : #"""
+plugins {
+    id 'com.android.application' version '8.2.0' apply false
+}
+
+"""#
+        f["gradle.properties"] = "android.useAndroidX=true\norg.gradle.jvmargs=-Xmx2g\n"
+        let kPlugin = kotlin ? "    id 'org.jetbrains.kotlin.android'\n" : ""
+        let kOpts = kotlin ? "    kotlinOptions { jvmTarget = '17' }\n" : ""
+        f["app/build.gradle"] = #"""
+plugins {
+    id 'com.android.application'
+\#(kPlugin)}
+
+android {
+    namespace 'com.example.app'
+    compileSdk 34
+    defaultConfig {
+        applicationId "com.example.app"
+        minSdk \#(minSdk)
+        targetSdk 34
+        versionCode 1
+        versionName "1.0"
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+\#(kOpts)}
+
+"""#
+        f["app/src/main/AndroidManifest.xml"] = #"""
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application android:label="\#(name)">
+        <activity android:name=".MainActivity" android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>
+
+"""#
+        if kotlin {
+            f["app/src/main/java/com/example/app/MainActivity.kt"] = #"""
+package com.example.app
+
+import android.app.Activity
+import android.os.Bundle
+import android.widget.TextView
+
+class MainActivity : Activity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        val tv = TextView(this)
+        tv.text = "Ola, Android (Kotlin)!"
+        tv.textSize = 24f
+        setContentView(tv)
+    }
+}
+
+"""#
+        } else {
+            f["app/src/main/java/com/example/app/MainActivity.java"] = #"""
+package com.example.app;
+
+import android.app.Activity;
+import android.os.Bundle;
+import android.widget.TextView;
+
+public class MainActivity extends Activity {
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        TextView tv = new TextView(this);
+        tv.setText("Ola, Android (Java)!");
+        tv.setTextSize(24);
+        setContentView(tv);
+    }
+}
+
+"""#
+        }
+        f[".github/workflows/build.yml"] = androidWF
+        return f
+    }
 
     static let godotWF = #"""
 name: Build
@@ -144,7 +183,7 @@ name: Build IPA
 on: workflow_dispatch
 jobs:
   build:
-    runs-on: macos-14
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
       - run: brew install xcodegen

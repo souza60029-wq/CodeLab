@@ -109,7 +109,7 @@ enum Importer {
         if has("project.godot") { return .godot }
         if has("androidmanifest.xml") { return .android }
         if has("project.yml") || has("project.pbxproj") || has(".swift") { return .ios }
-        if has(".kt") || has(".kts") { return .kotlin }
+        if has(".kt") || has(".kts") { return .android }
         if has(".java") { return .java }
         if has(".cpp") || has(".cc") || has(".cxx") || has(".c") || has(".h") || has(".hpp") { return .cpp }
         return nil

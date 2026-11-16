@@ -87,6 +87,7 @@ struct GitHubLoginView: View {
     @State private var token = ""
     @State private var msg = ""
     @State private var busy = false
+    @State private var clientId = UserDefaults.standard.string(forKey: "gh_client_id") ?? ""
 
     var body: some View {
         NavigationView {
@@ -95,21 +96,46 @@ struct GitHubLoginView: View {
                     Section { Text("Conectado como @\(u)") }
                     Button("Sair") { gh.logout() }
                 } else {
-                    Section(header: Text("Token de acesso pessoal"),
+                    Section(header: Text("Entrar pelo site do GitHub"),
+                            footer: Text("Uma vez só: github.com → Settings → Developer settings → OAuth Apps → New OAuth App (qualquer nome; Homepage e Callback: https://github.com). Marque 'Enable Device Flow', salve e cole aqui o Client ID. Depois é só tocar em Entrar: o código é copiado, o GitHub abre e você cola e autoriza.")) {
+                        TextField("Client ID do OAuth App", text: $clientId)
+                            .textInputAutocapitalization(.never)
+                            .disableAutocorrection(true)
+                        Button(busy ? "Aguardando autorização…" : "Entrar com GitHub") {
+                            Task { @MainActor in
+                                busy = true
+                                msg = ""
+                                defer { busy = false }
+                                do { try await gh.loginDevice(clientId: clientId) }
+                                catch { msg = error.localizedDescription }
+                            }
+                        }
+                        .disabled(clientId.isEmpty || busy)
+                        if let code = gh.userCode {
+                            Text(code)
+                                .font(.system(size: 34, weight: .bold, design: .monospaced))
+                                .frame(maxWidth: .infinity)
+                            Text("Código copiado. Cole na página do GitHub e autorize.").font(.footnote)
+                            Button("Copiar código de novo") { UIPasteboard.general.string = code }
+                            if let url = URL(string: gh.verifyURL) { Link("Abrir página do GitHub", destination: url) }
+                        }
+                    }
+                    Section(header: Text("Ou com token de acesso pessoal"),
                             footer: Text("Crie em github.com → Settings → Developer settings → Personal access tokens (classic), marcando 'repo' e 'workflow'.")) {
                         SecureField("ghp_…", text: $token)
                             .textInputAutocapitalization(.never)
                             .disableAutocorrection(true)
-                    }
-                    Button(busy ? "Entrando…" : "Entrar") {
-                        Task {
-                            busy = true
-                            defer { busy = false }
-                            do { try await gh.login(token: token); token = ""; msg = "" }
-                            catch { msg = error.localizedDescription }
+                        Button("Entrar com token") {
+                            Task { @MainActor in
+                                busy = true
+                                msg = ""
+                                defer { busy = false }
+                                do { try await gh.login(token: token); token = "" }
+                                catch { msg = error.localizedDescription }
+                            }
                         }
+                        .disabled(token.isEmpty || busy)
                     }
-                    .disabled(token.isEmpty || busy)
                     if !msg.isEmpty { Text(msg).foregroundColor(.red) }
                 }
             }
@@ -127,17 +153,34 @@ struct ProjectsView: View {
     @State private var showImporter = false
     @State private var importMsg = ""
     @State private var showImportMsg = false
+    @State private var kotlin = false
+    @State private var minSdk = 24
+
+    static let sdks: [(Int, String)] = [(21, "5.0"), (23, "6.0"), (24, "7.0"), (26, "8.0"), (28, "9"),
+                                        (29, "10"), (30, "11"), (31, "12"), (33, "13"), (34, "14")]
 
     var body: some View {
         List {
             Section(header: Text("Novo projeto")) {
+                if lang == .android {
+                    Picker("Linguagem", selection: $kotlin) {
+                        Text("Java").tag(false)
+                        Text("Kotlin").tag(true)
+                    }
+                    .pickerStyle(.segmented)
+                    Picker("Compatível a partir do", selection: $minSdk) {
+                        ForEach(ProjectsView.sdks, id: \.0) { sdk in
+                            Text("Android " + sdk.1 + " (API " + String(sdk.0) + ")").tag(sdk.0)
+                        }
+                    }
+                }
                 HStack {
                     TextField("nome (sem espaços)", text: $newName)
                         .textInputAutocapitalization(.never)
                         .disableAutocorrection(true)
                     Button("Criar") {
                         let n = Store.cleanName(newName)
-                        if !n.isEmpty { store.create(lang, n); newName = ""; items = store.projects(lang) }
+                        if !n.isEmpty { store.create(lang, n, kotlin: kotlin, minSdk: minSdk); newName = ""; items = store.projects(lang) }
                     }
                 }
                 Button("Abrir projeto existente (.zip ou pasta)") { showImporter = true }
@@ -185,8 +228,7 @@ struct ProjectView: View {
     let name: String
     @EnvironmentObject var store: Store
     @EnvironmentObject var gh: GitHub
-    @State private var files: [String] = []
-    @State private var newFile = ""
+    @State private var refresh = UUID()
     @State private var repo = ""
     @State private var busy = false
     @State private var showLog = false
@@ -206,30 +248,22 @@ struct ProjectView: View {
         }
     }
 
+    func runLocal() {
+        let exts = lang == .java ? ["java"] : ["c", "cpp", "cc", "cxx"]
+        var src = ""
+        for f in Store.files(in: dir) where exts.contains((f as NSString).pathExtension.lowercased()) {
+            src += ((try? String(contentsOf: dir.appendingPathComponent(f))) ?? "") + "\n"
+        }
+        gh.log = Interp(java: lang == .java).run(src)
+        showLog = true
+    }
+
     var body: some View {
         List {
-            Section(header: Text("Arquivos")) {
-                ForEach(files, id: \.self) { f in
-                    NavigationLink(f, destination: EditorView(url: dir.appendingPathComponent(f)))
-                }
-                .onDelete { idx in
-                    for i in idx { try? FileManager.default.removeItem(at: dir.appendingPathComponent(files[i])) }
-                    files = Store.files(in: dir)
-                }
-                HStack {
-                    TextField("novo arquivo (ex: util.cpp)", text: $newFile)
-                        .textInputAutocapitalization(.never)
-                        .disableAutocorrection(true)
-                    Button("Criar") {
-                        let n = newFile.trimmingCharacters(in: .whitespaces)
-                        if !n.isEmpty {
-                            let u = dir.appendingPathComponent(n)
-                            try? FileManager.default.createDirectory(at: u.deletingLastPathComponent(), withIntermediateDirectories: true)
-                            if !FileManager.default.fileExists(atPath: u.path) { try? "".write(to: u, atomically: true, encoding: .utf8) }
-                            newFile = ""
-                            files = Store.files(in: dir)
-                        }
-                    }
+            FolderListSection(dir: dir).id(refresh)
+            if lang == .cpp || lang == .java {
+                Section(header: Text("Executar"), footer: Text("Roda no próprio aparelho, sem GitHub. Suporta variáveis, if/while/for, funções, printf/cout/System.out. Ainda sem arrays, classes com objetos e entrada de dados.")) {
+                    Button("▶︎ Executar (no aparelho)") { runLocal() }
                 }
             }
             Section(header: Text("GitHub"), footer: Text("Executar envia o projeto (git add + commit + push), roda o workflow no GitHub e mostra a saída aqui. Para Android/iOS, o APK/IPA é baixado para Arquivos → CodeLab → Downloads.")) {
@@ -239,7 +273,7 @@ struct ProjectView: View {
                 Button("Enviar pro GitHub (add + commit + push)") {
                     perform {
                         _ = try await gh.syncAndPush(dir: dir, repo: repo, say: { gh.add($0) })
-                        files = Store.files(in: dir)
+                        refresh = UUID()
                     }
                 }
                 .disabled(repo.isEmpty || busy)
@@ -253,10 +287,11 @@ struct ProjectView: View {
                             Repo.save(s, dir)
                         }
                         try await gh.pull(root: dir, say: { gh.add($0) })
-                        files = Store.files(in: dir)
+                        refresh = UUID()
                     }
                 }
                 .disabled(repo.isEmpty || busy)
+                if lang != .cpp && lang != .java {
                 Button(lang == .android ? "Montar APK" : lang == .ios ? "Montar IPA" : "Executar / compilar") {
                     perform {
                         let slug = try await gh.syncAndPush(dir: dir, repo: repo, say: { gh.add($0) })
@@ -266,6 +301,7 @@ struct ProjectView: View {
                     }
                 }
                 .disabled(repo.isEmpty || busy)
+                }
             }
             Section(header: Text("Terminal")) {
                 NavigationLink("Abrir terminal nesta pasta", destination: TerminalView(start: dir))
@@ -273,7 +309,6 @@ struct ProjectView: View {
         }
         .navigationTitle(name)
         .onAppear {
-            files = Store.files(in: dir)
             let saved = Repo.load(dir).remote
             repo = saved.isEmpty ? (UserDefaults.standard.string(forKey: repoKey) ?? name) : saved
         }
@@ -322,5 +357,85 @@ struct EditorView: View {
         }
         .onAppear { text = (try? String(contentsOf: url)) ?? "" }
         .onDisappear { try? text.write(to: url, atomically: true, encoding: .utf8) }
+    }
+}
+
+struct FolderItem: Identifiable {
+    let name: String
+    let isDir: Bool
+    var id: String { name }
+}
+
+/// Lista de pastas e arquivos de uma pasta, no estilo do app Arquivos do iOS.
+struct FolderListSection: View {
+    let dir: URL
+    @State private var items: [FolderItem] = []
+    @State private var newName = ""
+
+    func reload() {
+        let names = (try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? []
+        var list: [FolderItem] = []
+        for n in names {
+            if n == ".codelab" || n == ".git" || n == ".DS_Store" { continue }
+            var d: ObjCBool = false
+            FileManager.default.fileExists(atPath: dir.appendingPathComponent(n).path, isDirectory: &d)
+            list.append(FolderItem(name: n, isDir: d.boolValue))
+        }
+        items = list.sorted { x, y in
+            if x.isDir != y.isDir { return x.isDir }
+            return x.name.lowercased() < y.name.lowercased()
+        }
+    }
+
+    func create(folder: Bool) {
+        let n = newName.trimmingCharacters(in: .whitespaces)
+        guard !n.isEmpty else { return }
+        let u = dir.appendingPathComponent(n)
+        if folder {
+            try? FileManager.default.createDirectory(at: u, withIntermediateDirectories: true)
+        } else {
+            try? FileManager.default.createDirectory(at: u.deletingLastPathComponent(), withIntermediateDirectories: true)
+            if !FileManager.default.fileExists(atPath: u.path) { try? "".write(to: u, atomically: true, encoding: .utf8) }
+        }
+        newName = ""
+        reload()
+    }
+
+    var body: some View {
+        Section(header: Text(dir.lastPathComponent)) {
+            ForEach(items) { it in
+                if it.isDir {
+                    NavigationLink(destination: FolderView(dir: dir.appendingPathComponent(it.name))) {
+                        Label(it.name, systemImage: "folder")
+                    }
+                } else {
+                    NavigationLink(destination: EditorView(url: dir.appendingPathComponent(it.name))) {
+                        Label(it.name, systemImage: "doc.text")
+                    }
+                }
+            }
+            .onDelete { idx in
+                for i in idx { try? FileManager.default.removeItem(at: dir.appendingPathComponent(items[i].name)) }
+                reload()
+            }
+            HStack {
+                TextField("nome (ex: util.cpp ou src)", text: $newName)
+                    .textInputAutocapitalization(.never)
+                    .disableAutocorrection(true)
+                Menu("Novo") {
+                    Button("Arquivo") { create(folder: false) }
+                    Button("Pasta") { create(folder: true) }
+                }
+            }
+        }
+        .onAppear { reload() }
+    }
+}
+
+struct FolderView: View {
+    let dir: URL
+    var body: some View {
+        List { FolderListSection(dir: dir) }
+            .navigationTitle(dir.lastPathComponent)
     }
 }

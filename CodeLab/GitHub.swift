@@ -1,4 +1,5 @@
 import Foundation
+import UIKit
 
 struct GHError: LocalizedError {
     let msg: String
@@ -22,6 +23,8 @@ struct RunResult {
 final class GitHub: ObservableObject {
     @Published var user: String? = UserDefaults.standard.string(forKey: "gh_user")
     @Published var log: String = ""
+    @Published var userCode: String? = nil
+    @Published var verifyURL: String = ""
 
     func add(_ s: String) {
         log += (log.isEmpty ? "" : "\n") + s
@@ -93,6 +96,61 @@ final class GitHub: ObservableObject {
         }
         UserDefaults.standard.set(name, forKey: "gh_user")
         user = name
+    }
+
+
+    /// Login pelo site do GitHub (Device Flow): mostra um código, você autoriza no github.com e o app recebe o token.
+    func loginDevice(clientId: String) async throws {
+        let cid = clientId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cid.isEmpty else { throw GHError(msg: "Informe o Client ID do seu OAuth App.") }
+        UserDefaults.standard.set(cid, forKey: "gh_client_id")
+
+        func post(_ url: String, _ body: [String: Any]) async throws -> [String: Any] {
+            guard let u = URL(string: url) else { throw GHError(msg: "URL inválida") }
+            var req = URLRequest(url: u)
+            req.httpMethod = "POST"
+            req.setValue("application/json", forHTTPHeaderField: "Accept")
+            req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            req.httpBody = try JSONSerialization.data(withJSONObject: body)
+            let (d, _) = try await URLSession.shared.data(for: req)
+            return GitHub.json(d)
+        }
+
+        let r = try await post("https://github.com/login/device/code", ["client_id": cid, "scope": "repo workflow"])
+        guard let device = r["device_code"] as? String, let code = r["user_code"] as? String else {
+            let m = (r["error_description"] as? String) ?? (r["error"] as? String) ?? "resposta inválida"
+            throw GHError(msg: "O GitHub recusou: " + m + ". Confira o Client ID e se 'Enable Device Flow' está marcado no OAuth App.")
+        }
+        let uri = (r["verification_uri"] as? String) ?? "https://github.com/login/device"
+        var interval = (r["interval"] as? Int) ?? 5
+        let expires = (r["expires_in"] as? Int) ?? 900
+        userCode = code
+        verifyURL = uri
+        UIPasteboard.general.string = code
+        if let u = URL(string: uri) { UIApplication.shared.open(u, options: [:], completionHandler: nil) }
+        defer { userCode = nil }
+
+        var waited = 0
+        while waited < expires {
+            try await Task.sleep(nanoseconds: UInt64(interval) * 1_000_000_000)
+            waited += interval
+            let t = try await post("https://github.com/login/oauth/access_token",
+                                   ["client_id": cid, "device_code": device,
+                                    "grant_type": "urn:ietf:params:oauth:grant-type:device_code"])
+            if let tok = t["access_token"] as? String {
+                try await login(token: tok)
+                return
+            }
+            let err = (t["error"] as? String) ?? ""
+            switch err {
+            case "authorization_pending": break
+            case "slow_down": interval += 5
+            case "expired_token": throw GHError(msg: "O código expirou. Tente de novo.")
+            case "access_denied": throw GHError(msg: "Acesso negado no GitHub.")
+            default: throw GHError(msg: "Erro: " + ((t["error_description"] as? String) ?? "desconhecido"))
+            }
+        }
+        throw GHError(msg: "Tempo esgotado esperando a autorização.")
     }
 
     func logout() {
