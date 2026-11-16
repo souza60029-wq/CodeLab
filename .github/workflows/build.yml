@@ -1,0 +1,28 @@
+name: Build IPA
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - name: Instalar XcodeGen
+        run: brew install xcodegen
+      - name: Gerar projeto
+        run: xcodegen generate
+      - name: Compilar sem assinatura
+        run: |
+          xcodebuild -project CodeLab.xcodeproj -scheme CodeLab -configuration Release \
+            -sdk iphoneos -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" build
+      - name: Empacotar .ipa
+        run: |
+          mkdir Payload
+          cp -R build/Build/Products/Release-iphoneos/CodeLab.app Payload/
+          zip -r CodeLab.ipa Payload
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CodeLab-ipa
+          path: CodeLab.ipa
