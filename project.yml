@@ -1,0 +1,22 @@
+name: CodeLab
+options:
+  bundleIdPrefix: com.rhuan
+  deploymentTarget:
+    iOS: "15.0"
+targets:
+  CodeLab:
+    type: application
+    platform: iOS
+    sources: [CodeLab]
+    info:
+      path: Config/Info.plist
+      properties:
+        CFBundleDisplayName: CodeLab
+        UILaunchScreen: {}
+        UIFileSharingEnabled: true
+        LSSupportsOpeningDocumentsInPlace: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.rhuan.codelab
+        SWIFT_VERSION: "5.0"
+        TARGETED_DEVICE_FAMILY: "1,2"
