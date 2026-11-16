@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct Card: View {
     let icon: String
@@ -22,6 +23,9 @@ struct RootView: View {
     @StateObject private var gh = GitHub()
     @StateObject private var store = Store()
     @State private var showGH = false
+    @State private var showImporter = false
+    @State private var importMsg = ""
+    @State private var showImportMsg = false
 
     var body: some View {
         NavigationView {
@@ -33,19 +37,44 @@ struct RootView: View {
                         }
                     }
                     NavigationLink(destination: TerminalView()) {
-                        Card(icon: "terminal", title: "Terminal", sub: "Comandos locais")
+                        Card(icon: "terminal", title: "Terminal", sub: "git + comandos")
                     }
                 }
                 .padding()
             }
             .navigationTitle("CodeLab")
             .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button { showImporter = true } label: { Image(systemName: "square.and.arrow.down") }
+                }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button(gh.user.map { "@" + $0 } ?? "Entrar no GitHub") { showGH = true }
                 }
             }
         }
         .navigationViewStyle(.stack)
+        .fileImporter(isPresented: $showImporter, allowedContentTypes: [.zip, .folder], allowsMultipleSelection: false) { result in
+            switch result {
+            case .success(let urls):
+                if let u = urls.first {
+                    do {
+                        let (l, n) = try Importer.importItem(u, lang: nil)
+                        importMsg = "Projeto \"\(n)\" importado em \(l.title)."
+                    } catch {
+                        importMsg = error.localizedDescription
+                    }
+                    showImportMsg = true
+                }
+            case .failure(let e):
+                importMsg = e.localizedDescription
+                showImportMsg = true
+            }
+        }
+        .alert("Abrir projeto", isPresented: $showImportMsg) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(importMsg)
+        }
         .environmentObject(gh)
         .environmentObject(store)
         .sheet(isPresented: $showGH) { GitHubLoginView().environmentObject(gh) }
@@ -95,10 +124,9 @@ struct ProjectsView: View {
     @EnvironmentObject var store: Store
     @State private var newName = ""
     @State private var items: [String] = []
-
-    func clean(_ s: String) -> String {
-        String(s.map { $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" ? $0 : "-" })
-    }
+    @State private var showImporter = false
+    @State private var importMsg = ""
+    @State private var showImportMsg = false
 
     var body: some View {
         List {
@@ -108,12 +136,13 @@ struct ProjectsView: View {
                         .textInputAutocapitalization(.never)
                         .disableAutocorrection(true)
                     Button("Criar") {
-                        let n = clean(newName)
+                        let n = Store.cleanName(newName)
                         if !n.isEmpty { store.create(lang, n); newName = ""; items = store.projects(lang) }
                     }
                 }
+                Button("Abrir projeto existente (.zip ou pasta)") { showImporter = true }
             }
-            Section(header: Text("Projetos")) {
+            Section(header: Text("Projetos"), footer: Text("Dica: você também pode copiar pastas direto no app Arquivos → No meu iPhone → CodeLab → Projects → \(lang.rawValue).")) {
                 ForEach(items, id: \.self) { n in
                     NavigationLink(n, destination: ProjectView(lang: lang, name: n))
                 }
@@ -125,6 +154,29 @@ struct ProjectsView: View {
         }
         .navigationTitle(lang.title)
         .onAppear { items = store.projects(lang) }
+        .fileImporter(isPresented: $showImporter, allowedContentTypes: [.zip, .folder], allowsMultipleSelection: false) { result in
+            switch result {
+            case .success(let urls):
+                if let u = urls.first {
+                    do {
+                        let (_, n) = try Importer.importItem(u, lang: lang)
+                        importMsg = "Projeto \"\(n)\" importado."
+                        items = store.projects(lang)
+                    } catch {
+                        importMsg = error.localizedDescription
+                    }
+                    showImportMsg = true
+                }
+            case .failure(let e):
+                importMsg = e.localizedDescription
+                showImportMsg = true
+            }
+        }
+        .alert("Abrir projeto", isPresented: $showImportMsg) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(importMsg)
+        }
     }
 }
 
@@ -142,11 +194,27 @@ struct ProjectView: View {
     var dir: URL { store.dir(lang, name) }
     var repoKey: String { "repo-\(lang.rawValue)-\(name)" }
 
+    func perform(_ job: @escaping @MainActor () async throws -> Void) {
+        UserDefaults.standard.set(repo, forKey: repoKey)
+        Task {
+            busy = true
+            showLog = true
+            gh.log = ""
+            defer { busy = false }
+            do { try await job() }
+            catch { gh.add("ERRO: " + error.localizedDescription) }
+        }
+    }
+
     var body: some View {
         List {
             Section(header: Text("Arquivos")) {
                 ForEach(files, id: \.self) { f in
                     NavigationLink(f, destination: EditorView(url: dir.appendingPathComponent(f)))
+                }
+                .onDelete { idx in
+                    for i in idx { try? FileManager.default.removeItem(at: dir.appendingPathComponent(files[i])) }
+                    files = Store.files(in: dir)
                 }
                 HStack {
                     TextField("novo arquivo (ex: util.cpp)", text: $newFile)
@@ -164,36 +232,50 @@ struct ProjectView: View {
                     }
                 }
             }
-            Section(header: Text("GitHub"), footer: Text("Executar envia o projeto, roda o workflow no GitHub e mostra o resultado. Para Android/iOS, o APK/IPA fica em Artifacts na página da execução.")) {
-                TextField("repositório", text: $repo)
+            Section(header: Text("GitHub"), footer: Text("Executar envia o projeto (git add + commit + push), roda o workflow no GitHub e mostra a saída aqui. Para Android/iOS, o APK/IPA é baixado para Arquivos → CodeLab → Downloads.")) {
+                TextField("repositório (usuario/nome ou só o nome)", text: $repo)
                     .textInputAutocapitalization(.never)
                     .disableAutocorrection(true)
-                Button("Enviar pro GitHub") {
-                    UserDefaults.standard.set(repo, forKey: repoKey)
-                    Task {
-                        busy = true; showLog = true
-                        defer { busy = false }
-                        do { _ = try await gh.push(dir: dir, repo: repo) }
-                        catch { gh.log = error.localizedDescription }
+                Button("Enviar pro GitHub (add + commit + push)") {
+                    perform {
+                        _ = try await gh.syncAndPush(dir: dir, repo: repo, say: { gh.add($0) })
+                        files = Store.files(in: dir)
+                    }
+                }
+                .disabled(repo.isEmpty || busy)
+                Button("Baixar do GitHub (pull)") {
+                    perform {
+                        Repo.initRepo(dir)
+                        var s = Repo.load(dir)
+                        if s.remote.isEmpty {
+                            guard let slug = Repo.normalize(repo, user: gh.user) else { throw GHError(msg: "Nome de repositório inválido.") }
+                            s.remote = slug
+                            Repo.save(s, dir)
+                        }
+                        try await gh.pull(root: dir, say: { gh.add($0) })
+                        files = Store.files(in: dir)
                     }
                 }
                 .disabled(repo.isEmpty || busy)
                 Button(lang == .android ? "Montar APK" : lang == .ios ? "Montar IPA" : "Executar / compilar") {
-                    UserDefaults.standard.set(repo, forKey: repoKey)
-                    Task {
-                        busy = true; showLog = true
-                        defer { busy = false }
-                        do { try await gh.runAndWait(dir: dir, repo: repo) }
-                        catch { gh.log = error.localizedDescription }
+                    perform {
+                        let slug = try await gh.syncAndPush(dir: dir, repo: repo, say: { gh.add($0) })
+                        let br = Repo.load(dir).branch
+                        let r = try await gh.runWorkflow(slug: slug, branch: br, say: { gh.add($0) })
+                        gh.add(GitHub.describe(r))
                     }
                 }
                 .disabled(repo.isEmpty || busy)
+            }
+            Section(header: Text("Terminal")) {
+                NavigationLink("Abrir terminal nesta pasta", destination: TerminalView(start: dir))
             }
         }
         .navigationTitle(name)
         .onAppear {
             files = Store.files(in: dir)
-            repo = UserDefaults.standard.string(forKey: repoKey) ?? name
+            let saved = Repo.load(dir).remote
+            repo = saved.isEmpty ? (UserDefaults.standard.string(forKey: repoKey) ?? name) : saved
         }
         .sheet(isPresented: $showLog) {
             NavigationView {
@@ -202,6 +284,7 @@ struct ProjectView: View {
                         .font(.system(.footnote, design: .monospaced))
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding()
+                        .textSelection(.enabled)
                 }
                 .navigationTitle(busy ? "Trabalhando…" : "Resultado")
                 .toolbar { ToolbarItem(placement: .navigationBarTrailing) { Button("Fechar") { showLog = false } } }
@@ -218,11 +301,7 @@ struct EditorView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            TextEditor(text: $text)
-                .font(.system(.body, design: .monospaced))
-                .textInputAutocapitalization(.never)
-                .disableAutocorrection(true)
-                .padding(.horizontal, 4)
+            CodeEditor(text: $text, ext: ext)
             Divider()
             if issues.isEmpty {
                 Text("✓ nenhum problema encontrado").font(.footnote).padding(8)

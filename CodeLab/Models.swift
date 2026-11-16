@@ -64,9 +64,16 @@ final class Store: ObservableObject {
         try? FileManager.default.removeItem(at: dir(l, n))
     }
 
+    static func cleanName(_ s: String) -> String {
+        String(s.map { $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" ? $0 : "-" })
+    }
+
     static func files(in d: URL) -> [String] {
         let subs = (try? FileManager.default.subpathsOfDirectory(atPath: d.path)) ?? []
         return subs.filter { p in
+            if p == ".codelab" || p.hasPrefix(".codelab/") { return false }
+            if p == ".git" || p.hasPrefix(".git/") { return false }
+            if p.hasSuffix(".DS_Store") { return false }
             var isDir: ObjCBool = false
             FileManager.default.fileExists(atPath: d.appendingPathComponent(p).path, isDirectory: &isDir)
             return !isDir.boolValue

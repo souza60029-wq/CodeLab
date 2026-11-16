@@ -56,7 +56,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Compilar e executar
         run: |
-          g++ -std=c++17 -Wall -Wextra *.cpp -o app
+          g++ -std=c++17 -Wall -Wextra $(find . -name '*.cpp') -I. -o app
           ./app
 """#
 
@@ -74,8 +74,9 @@ jobs:
           java-version: 17
       - name: Compilar e executar
         run: |
-          javac *.java
-          java Main
+          mkdir -p out
+          javac $(find . -name '*.java') -d out
+          java -cp out Main
 """#
 
     static let kotlinWF = #"""
@@ -96,7 +97,7 @@ jobs:
           unzip -q kotlin-compiler-1.9.22.zip
       - name: Compilar e executar
         run: |
-          ./kotlinc/bin/kotlinc Main.kt -include-runtime -d app.jar
+          ./kotlinc/bin/kotlinc $(find . -name '*.kt') -include-runtime -d app.jar
           java -jar app.jar
 """#
 

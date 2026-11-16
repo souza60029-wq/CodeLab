@@ -1,80 +1,93 @@
 # CodeLab
 
-App iOS para **programar direto do iPhone**, mesmo em aparelhos antigos (feito para iPhone 6s / iOS 15.x, instalado via TrollStore).
+App iOS para **aprender a programar direto do iPhone**, mesmo em aparelhos antigos (feito para iPhone 6s / iOS 15.x, instalado via TrollStore).
 
-Como o iPhone não consegue compilar C++, Java, Kotlin, Android etc. sozinho, o CodeLab funciona assim:
+O iPhone não compila C++, Java, Kotlin, Android etc. sozinho. Por isso o CodeLab funciona assim:
 
-> **Você escreve o código no app → o app envia para o GitHub → o GitHub compila/executa → o app mostra o resultado.**
+> **Você escreve o código no app → envia para o GitHub (com git) → o GitHub compila/executa → o app mostra o resultado.**
 
 ## O que o app faz
 
 | Opção | O que acontece |
 |---|---|
-| **C / C++** | Cria projeto com `main.cpp`. O GitHub compila com `g++` e executa. |
-| **Java** | Cria `Main.java`. O GitHub roda `javac` + `java`. |
-| **Kotlin** | Cria `Main.kt`. O GitHub baixa o `kotlinc`, compila e executa. |
-| **Godot** | Cria `project.godot` + `main.gd`. O GitHub roda o script com Godot 4 (modo headless). |
-| **Android** | Cria um projeto Gradle vazio (estilo Android Studio, com pastas `app/src/main/...`). O GitHub monta o **APK**. |
-| **iOS** | Cria um projeto SwiftUI vazio (XcodeGen). O GitHub (macOS) monta um **IPA sem assinatura**. |
-| **Terminal** | Mini terminal **local e simulado** (veja abaixo). |
+| **C / C++** | `g++` no GitHub (compila todos os `.cpp` do projeto, inclusive em subpastas) e executa. |
+| **Java** | `javac` + `java` no GitHub (todos os `.java`). |
+| **Kotlin** | `kotlinc` no GitHub (todos os `.kt`) e executa. |
+| **Godot** | Roda o script `main.gd` com Godot 4 (modo headless). |
+| **Android** | Projeto Gradle vazio (estilo Android Studio) → monta o **APK**. |
+| **iOS** | Projeto SwiftUI vazio (XcodeGen) → monta o **IPA sem assinatura**. |
+| **Terminal** | Terminal com **git de verdade conectado ao GitHub**, dicas e corretor de comandos. |
 
-Também tem:
+## Abrir projetos que você já tem
 
-- **Editor de texto** com salvamento automático.
-- **Corretor simples** (`Corrigir`): detecta parênteses/chaves sem par, `;` faltando em C/C++/Java e `:` faltando em GDScript. É uma checagem básica, **não é um compilador** — pode errar. O erro "de verdade" aparece no resultado do GitHub.
-- **Login no GitHub** por token de acesso pessoal.
-- **Enviar pro GitHub** (cria o repositório privado se não existir) e **Executar / Montar APK / Montar IPA** (envia, dispara o workflow e mostra o resultado no app).
+- Botão **⤓** no menu principal: escolha um **.zip** ou uma **pasta** (a linguagem é detectada sozinha).
+- Dentro de cada linguagem: **Abrir projeto existente (.zip ou pasta)**.
+- Zips do GitHub (com uma pasta única dentro) são abertos sem a pasta extra; `__MACOSX`, `.DS_Store` e `.git` são ignorados.
+- Alternativa: copie a pasta pelo app **Arquivos → No meu iPhone → CodeLab → Projects → (linguagem)**.
+
+## Editor
+
+Cores de sintaxe, **barra de símbolos** acima do teclado (`{ } ( ) ; : " ...`), Tab e auto-indentação. O botão **Corrigir** usa o corretor simples (parênteses/chaves sem par, `;` ou `:` faltando). Ele **não é um compilador**: o erro de verdade aparece na saída do GitHub.
+
+## Terminal e git
+
+O terminal **não executa programas do iOS** (o iOS não permite, e não existem `apt`, `gcc`, `sudo` etc. no aparelho). Em vez disso, o CodeLab implementa os comandos por dentro, falando com a API do GitHub:
+
+```
+git init                       cria o repositório na pasta
+git clone usuario/repo         baixa um repositório
+git remote add origin repo     liga a pasta ao GitHub
+git status | add | commit -m   o ciclo normal do git
+git push | pull | log          envia / baixa / histórico
+git diff | branch | reset | rm
+run                            compila/executa no GitHub e mostra a saída
+ls cd pwd tree cat head tail grep wc mkdir touch rm mv cp echo clear ...
+```
+
+- `git push` envia **um commit real por commit local** (blobs → árvore → commit → branch), com a sua mensagem.
+- `&&` funciona: `git add . && git commit -m "ok" && git push`.
+- **Indicador de próximo passo** (💡), **sugestões** tocáveis e **corretor** ("Você quis dizer git commit?") aparecem enquanto você digita. O botão **?** abre a lista completa.
+- Não suportado ainda: `checkout`, `switch`, `restore`, `merge`, `rebase`, `stash`, `fetch`, `tag` (o app avisa).
+
+### Fluxo básico
+
+```
+cd cpp/meuprojeto
+git init
+git remote add origin meu-usuario/meuprojeto
+git add .
+git commit -m "primeira versão"
+git push
+run
+```
 
 ## Como usar
 
-1. Em github.com → Settings → Developer settings → Personal access tokens (classic), crie um token marcando **`repo`** e **`workflow`**.
-2. No app, toque em **Entrar no GitHub** e cole o token.
-3. Escolha uma linguagem → crie um projeto → edite os arquivos.
-4. Digite o nome do repositório e toque em **Executar / compilar** (ou **Montar APK / IPA**).
-5. Para APK/IPA: abra a execução no GitHub → **Artifacts** e baixe o arquivo.
-
-> O IPA gerado não é assinado. No iPhone com TrollStore, basta abri-lo com o TrollStore para instalar.
-
-## Terminal: por que `sudo` e `apt` não funcionam?
-
-O terminal do CodeLab **não é um terminal de verdade**. Ele é um mini-interpretador escrito em Swift que entende só estes comandos:
-
-`help pwd ls cd cat mkdir touch rm mv cp echo wc clear`
-
-e só enxerga a pasta de projetos do próprio app. Qualquer outro comando (`sudo`, `apt`, `git`, `gcc`, `python`...) cai em "comando não encontrado", porque:
-
-1. O app **não executa programas externos** — ele só imita alguns comandos.
-2. O iOS **não tem** `apt`, `sudo`, `gcc` etc. instalados de fábrica; esses programas não existem no aparelho.
-3. O sandbox do iOS impede apps normais de abrir outros processos.
-
-Para ter um shell completo seria preciso outro caminho (ex.: um ambiente Linux por SSH em um servidor, ou um app com bootstrap próprio). Isso não faz parte desta versão.
+1. No GitHub: Settings → Developer settings → Personal access tokens (classic), com **`repo`** e **`workflow`**.
+2. No app, **Entrar no GitHub** e cole o token.
+3. Escolha a linguagem, crie/abra um projeto, edite.
+4. Use o terminal (`git ...` e `run`) **ou** os botões do projeto (Enviar / Executar), que fazem o mesmo.
+5. APK/IPA gerados são baixados para **Arquivos → CodeLab → Downloads** (toque no .zip para abrir). O IPA não é assinado: instale pelo TrollStore.
 
 ## Limitações conhecidas
 
-- Nada é compilado no aparelho; sempre depende de internet e do GitHub Actions (leva de ~1 a 5 minutos).
-- "Executar" roda o **projeto inteiro** no GitHub, não um trecho isolado.
-- C/C++ e Java compilam só arquivos da **raiz** do projeto (`*.cpp`, `*.java`).
-- O token do GitHub fica salvo em `UserDefaults` (não no Keychain). Use um token com validade curta.
-- O envio manda um arquivo por vez (um commit por arquivo) — lento em projetos grandes.
-- Sem destaque de sintaxe nem numeração de linhas no editor.
+- Nada é compilado no aparelho; depende de internet e do GitHub Actions (1 a 5 minutos).
+- `run` executa o **projeto inteiro** no GitHub, não um trecho isolado.
+- `git diff` mostra só um resumo por arquivo; sem `restore`/branches múltiplas.
+- Zip64 e métodos de compressão raros não são suportados na importação.
+- O token fica em `UserDefaults` (não no Keychain): use um token com validade curta.
 
-## Estrutura do repositório
+## Estrutura
 
 ```
+project.yml                    projeto (XcodeGen)
+.github/workflows/build.yml    gera o IPA do próprio CodeLab
 CodeLab/
-├── project.yml              # definição do projeto (XcodeGen)
-├── .github/workflows/build.yml   # gera o IPA do próprio CodeLab
-└── CodeLab/
-    ├── CodeLabApp.swift     # ponto de entrada
-    ├── Views.swift          # telas (menu, projetos, editor, login)
-    ├── Models.swift         # linguagens e armazenamento de projetos
-    ├── Templates.swift      # arquivos iniciais e workflows de cada linguagem
-    ├── GitHub.swift         # API do GitHub (login, envio, workflow, logs)
-    ├── Linter.swift         # corretor simples
-    ├── Terminal.swift       # terminal simulado
-    └── Assets.xcassets/     # ícone do app
+  CodeLabApp.swift   Views.swift   CodeEditor.swift
+  Models.swift       Templates.swift   Linter.swift
+  GitEngine.swift    (git local: status/add/commit)
+  GitHub.swift       (API: push/pull/clone/log/run)
+  Terminal.swift     (comandos, dicas, corretor)
+  Importer.swift     (abrir .zip e pastas)
+  Assets.xcassets/   ícone
 ```
-
-## Compilar o próprio CodeLab
-
-O workflow `.github/workflows/build.yml` roda a cada push na `main` (ou manualmente em **Actions → Build IPA → Run workflow**) e publica o `CodeLab.ipa` em Artifacts.
