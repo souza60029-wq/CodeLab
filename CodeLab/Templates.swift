@@ -2,6 +2,9 @@ import Foundation
 
 enum Templates {
     static func files(_ l: Lang, _ name: String) -> [String: String] {
+        let bundleSuffix = name.lowercased()
+            .replacingOccurrences(of: "-", with: "")
+            .replacingOccurrences(of: "_", with: "")
         switch l {
         case .cpp:
             return [
@@ -36,7 +39,7 @@ enum Templates {
             ]
         case .ios:
             return [
-                "project.yml": "name: \(name)\noptions:\n  bundleIdPrefix: com.rhuan\n  deploymentTarget:\n    iOS: \"15.0\"\ntargets:\n  \(name):\n    type: application\n    platform: iOS\n    sources: [App]\n    info:\n      path: Config/Info.plist\n      properties:\n        UILaunchScreen: {}\n    settings:\n      base:\n        PRODUCT_BUNDLE_IDENTIFIER: com.rhuan.\(name.lowercased().replacingOccurrences(of: \"-\", with: \"\").replacingOccurrences(of: \"_\", with: \"\"))\n        SWIFT_VERSION: \"5.0\"\n",
+                "project.yml": "name: \(name)\noptions:\n  bundleIdPrefix: com.rhuan\n  deploymentTarget:\n    iOS: \"15.0\"\ntargets:\n  \(name):\n    type: application\n    platform: iOS\n    sources: [App]\n    info:\n      path: Config/Info.plist\n      properties:\n        UILaunchScreen: {}\n    settings:\n      base:\n        PRODUCT_BUNDLE_IDENTIFIER: com.rhuan.\(bundleSuffix)\n        SWIFT_VERSION: \"5.0\"\n",
                 "App/App.swift": "import SwiftUI\n\n@main\nstruct MyApp: App {\n    var body: some Scene {\n        WindowGroup { Text(\"Ola, iOS!\").font(.largeTitle) }\n    }\n}\n",
                 ".github/workflows/build.yml": iosWF(name)
             ]
