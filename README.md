@@ -1,6 +1,6 @@
 # CodeLab
 
-App iOS para **aprender a programar direto do iPhone**, mesmo em aparelhos antigos (feito para iPhone 6s / iOS 15.x, instalado via TrollStore).
+App iOS para **programar direto do iPhone**, mesmo em aparelhos antigos (feito para iPhone 6s / iOS 15.x, instalado via TrollStore).
 
 Como o iPhone não consegue compilar C++, Java, Kotlin, Android etc. sozinho, o CodeLab funciona assim:
 
