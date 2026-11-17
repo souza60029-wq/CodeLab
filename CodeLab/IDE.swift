@@ -280,19 +280,17 @@ struct FileBrowser: View {
         .navigationViewStyle(.stack)
         .sheet(item: $prompt) { p in NameSheet(p: p) }
         .confirmationDialog(
-            "Apagar \"" + (toDelete?.lastPathComponent ?? "") + "\"?",
+            "Apagar este item?",
             isPresented: Binding(get: { toDelete != nil }, set: { if !$0 { toDelete = nil } }),
-            titleVisibility: .visible
-        ) {
-            Button("Apagar", role: .destructive) {
-                if let u = toDelete {
-                    try? fm.removeItem(at: u)
-                    onRemoved(u)
-                    tick += 1
-                }
-                toDelete = nil
+            titleVisibility: .visible,
+            presenting: toDelete
+        ) { u in
+            Button("Apagar " + u.lastPathComponent, role: .destructive) {
+                try? fm.removeItem(at: u)
+                onRemoved(u)
+                tick += 1
             }
-            Button("Cancelar", role: .cancel) { toDelete = nil }
+            Button("Cancelar", role: .cancel) {}
         }
     }
 }
