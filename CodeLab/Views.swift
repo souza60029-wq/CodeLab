@@ -187,7 +187,7 @@ struct ProjectsView: View {
             }
             Section(header: Text("Projetos"), footer: Text("Dica: você também pode copiar pastas direto no app Arquivos → No meu iPhone → CodeLab → Projects → \(lang.rawValue).")) {
                 ForEach(items, id: \.self) { n in
-                    NavigationLink(n, destination: ProjectView(lang: lang, name: n))
+                    NavigationLink(n, destination: IDEView(lang: lang, name: n))
                 }
                 .onDelete { idx in
                     for i in idx { store.delete(lang, items[i]) }
@@ -260,7 +260,6 @@ struct ProjectView: View {
 
     var body: some View {
         List {
-            FolderListSection(dir: dir).id(refresh)
             if lang == .cpp || lang == .java {
                 Section(header: Text("Executar"), footer: Text("Roda no próprio aparelho, sem GitHub. Suporta variáveis, if/while/for, funções, printf/cout/System.out. Ainda sem arrays, classes com objetos e entrada de dados.")) {
                     Button("▶︎ Executar (no aparelho)") { runLocal() }
@@ -307,7 +306,7 @@ struct ProjectView: View {
                 NavigationLink("Abrir terminal nesta pasta", destination: TerminalView(start: dir))
             }
         }
-        .navigationTitle(name)
+        .navigationTitle("Ferramentas")
         .onAppear {
             let saved = Repo.load(dir).remote
             repo = saved.isEmpty ? (UserDefaults.standard.string(forKey: repoKey) ?? name) : saved
