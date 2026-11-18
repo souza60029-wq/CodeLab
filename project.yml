@@ -1,13 +1,37 @@
 name: CodeLab
 options:
-  bundleIdPrefix: com.codelab
+  bundleIdPrefix: com.rhuan
   deploymentTarget:
     iOS: "15.0"
 targets:
   CodeLab:
     type: application
     platform: iOS
-    sources: [CodeLab]
+    sources:
+      - CodeLab
+      - path: Resources
+        optional: true
+    dependencies:
+      - framework: Frameworks/ios_system.xcframework
+        embed: true
+      - framework: Frameworks/files.xcframework
+        embed: true
+        link: false
+      - framework: Frameworks/shell.xcframework
+        embed: true
+        link: false
+      - framework: Frameworks/text.xcframework
+        embed: true
+        link: false
+      - framework: Frameworks/tar.xcframework
+        embed: true
+        link: false
+      - framework: Frameworks/awk.xcframework
+        embed: true
+        link: false
+      - framework: Frameworks/curl_ios.xcframework
+        embed: true
+        link: false
     info:
       path: Config/Info.plist
       properties:
@@ -17,7 +41,7 @@ targets:
         LSSupportsOpeningDocumentsInPlace: true
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.cod.lab
+        PRODUCT_BUNDLE_IDENTIFIER: com.rhuan.codelab
         SWIFT_VERSION: "5.0"
         TARGETED_DEVICE_FAMILY: "1,2"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon

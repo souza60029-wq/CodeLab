@@ -88,6 +88,7 @@ struct GitHubLoginView: View {
     @State private var msg = ""
     @State private var busy = false
     @State private var clientId = UserDefaults.standard.string(forKey: "gh_client_id") ?? ""
+    @State private var showWeb = false
 
     var body: some View {
         NavigationView {
@@ -97,7 +98,7 @@ struct GitHubLoginView: View {
                     Button("Sair") { gh.logout() }
                 } else {
                     Section(header: Text("Entrar pelo site do GitHub"),
-                            footer: Text("Uma vez só: github.com → Settings → Developer settings → OAuth Apps → New OAuth App (qualquer nome; Homepage e Callback: https://github.com). Marque 'Enable Device Flow', salve e cole aqui o Client ID. Depois é só tocar em Entrar: o código é copiado, o GitHub abre e você cola e autoriza.")) {
+                            footer: Text("Uma vez só: github.com → Settings → Developer settings → OAuth Apps → New OAuth App (qualquer nome; Homepage e Callback: https://github.com). Marque 'Enable Device Flow', salve e cole aqui o Client ID. Depois é só tocar em Entrar: abre a página do GitHub dentro do app (email, senha e 2 etapas) e você cola o código copiado.")) {
                         TextField("Client ID do OAuth App", text: $clientId)
                             .textInputAutocapitalization(.never)
                             .disableAutocorrection(true)
@@ -141,6 +142,12 @@ struct GitHubLoginView: View {
             }
             .navigationTitle("GitHub")
             .toolbar { ToolbarItem(placement: .navigationBarTrailing) { Button("Fechar") { pm.wrappedValue.dismiss() } } }
+        }
+        .onChange(of: gh.userCode) { code in showWeb = (code != nil) }
+        .sheet(isPresented: $showWeb) {
+            if let code = gh.userCode, let url = URL(string: gh.verifyURL) {
+                GitHubWebSheet(url: url, code: code)
+            }
         }
     }
 }

@@ -127,7 +127,6 @@ final class GitHub: ObservableObject {
         userCode = code
         verifyURL = uri
         UIPasteboard.general.string = code
-        if let u = URL(string: uri) { UIApplication.shared.open(u, options: [:], completionHandler: nil) }
         defer { userCode = nil }
 
         var waited = 0

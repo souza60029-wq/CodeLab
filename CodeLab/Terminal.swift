@@ -321,7 +321,7 @@ final class TerminalModel: ObservableObject {
         busy = true
         Task {
             for part in TerminalModel.splitAnd(l) {
-                let ok = await execute(TerminalModel.tokens(part))
+                let ok = await execute(TerminalModel.tokens(part), raw: part)
                 if !ok { break }
             }
             busy = false
@@ -329,7 +329,7 @@ final class TerminalModel: ObservableObject {
         }
     }
 
-    func execute(_ t: [String]) async -> Bool {
+    func execute(_ t: [String], raw: String? = nil) async -> Bool {
         guard let cmd = t.first else { return true }
         let args = Array(t.dropFirst())
         if cmd == "git" { return await git(args) }
@@ -337,6 +337,12 @@ final class TerminalModel: ObservableObject {
         if cmd == "help" { help(); return true }
         if cmd == "clear" { out = ""; return true }
         if let ok = local(cmd, args) { return ok }
+        if RealShell.has(cmd) {
+            let line = (raw ?? t.joined(separator: " ")).trimmingCharacters(in: .whitespaces)
+            let res = await RealShell.run(line, cwd: cwd)
+            if !res.isEmpty { say(res) }
+            return true
+        }
         unknown(cmd)
         return false
     }
@@ -374,6 +380,9 @@ final class TerminalModel: ObservableObject {
           ls [-a]  cd  pwd  tree  cat  head  tail  grep  wc
           mkdir  touch  rm [-r]  mv  cp [-r]  echo "texto" > arquivo
           clear  date  whoami  history
+
+        TERMINAL REAL (ios_system): sed, awk, tar, curl, find, diff, du, stat, sort, uniq, tr, gzip…
+          qualquer comando que não for dos acima é tentado no terminal real
 
         Dica: use && para encadear:  git add . && git commit -m "ok" && git push
         Toque no ? para ver a lista completa e as dicas aparecem sozinhas enquanto você digita.

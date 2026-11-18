@@ -8,6 +8,17 @@ jobs:
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
+      - name: Baixar ios_system (terminal real)
+        run: |
+          mkdir -p Frameworks Resources
+          for n in ios_system files shell text tar awk curl_ios; do
+            curl -fsSL -o "$n.zip" "https://github.com/holzschu/ios_system/releases/download/v3.0.3/$n.xcframework.zip"
+            unzip -q -o "$n.zip" -d Frameworks
+            rm "$n.zip"
+          done
+          curl -fsSL -o Resources/commandDictionary.plist "https://raw.githubusercontent.com/holzschu/ios_system/v3.0.3/Resources/commandDictionary.plist"
+          curl -fsSL -o Resources/extraCommandsDictionary.plist "https://raw.githubusercontent.com/holzschu/ios_system/v3.0.3/Resources/extraCommandsDictionary.plist"
+          ls Frameworks Resources
       - name: Instalar XcodeGen
         run: brew install xcodegen
       - name: Gerar projeto
