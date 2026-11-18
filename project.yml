@@ -1,6 +1,6 @@
 name: CodeLab
 options:
-  bundleIdPrefix: com.code
+  bundleIdPrefix: com.rhuan
   deploymentTarget:
     iOS: "15.0"
 targets:
@@ -41,7 +41,7 @@ targets:
         LSSupportsOpeningDocumentsInPlace: true
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.code.lab
+        PRODUCT_BUNDLE_IDENTIFIER: com.rhuan.codelab
         SWIFT_VERSION: "5.0"
         TARGETED_DEVICE_FAMILY: "1,2"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
