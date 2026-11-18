@@ -55,23 +55,6 @@ struct RootView: View {
             }
         }
         .navigationViewStyle(.stack)
-        .fileImporter(isPresented: $showImporter, allowedContentTypes: [.zip, .folder], allowsMultipleSelection: false) { result in
-            switch result {
-            case .success(let urls):
-                if let u = urls.first {
-                    do {
-                        let (l, n) = try Importer.importItem(u, lang: nil)
-                        importMsg = "Projeto \"\(n)\" importado em \(l.title)."
-                    } catch {
-                        importMsg = error.localizedDescription
-                    }
-                    showImportMsg = true
-                }
-            case .failure(let e):
-                importMsg = e.localizedDescription
-                showImportMsg = true
-            }
-        }
         .alert("Abrir projeto", isPresented: $showImportMsg) {
             Button("OK", role: .cancel) {}
         } message: {
