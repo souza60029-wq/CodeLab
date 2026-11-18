@@ -373,6 +373,120 @@ final class GitHub: ObservableObject {
         }
     }
 
+    // MARK: ZIP → GitHub em um único commit (como o ZipToGit)
+
+    func zipToGit(zip: URL, repo: String, branch: String, message: String, replaceAll: Bool, say: (String) -> Void) async throws -> String {
+        guard let me = user else { throw GHError(msg: "Entre no GitHub primeiro (botão no topo do menu).") }
+        guard let slug = Repo.normalize(repo, user: me) else {
+            throw GHError(msg: "Nome de repositório inválido. Use usuario/repositorio ou só o nome.")
+        }
+
+        // 1) abrir o .zip
+        let fm = FileManager.default
+        let scoped = zip.startAccessingSecurityScopedResource()
+        defer { if scoped { zip.stopAccessingSecurityScopedResource() } }
+        let tmp = fm.temporaryDirectory.appendingPathComponent("zip2git-" + UUID().uuidString)
+        defer { try? fm.removeItem(at: tmp) }
+        say("Abrindo o .zip…")
+        _ = try Zip.extract(zip, to: tmp)
+        let files = Store.files(in: tmp)
+        guard !files.isEmpty else { throw GHError(msg: "O .zip está vazio.") }
+        say("\(files.count) arquivo(s) no .zip.")
+
+        // 2) repositório (cria se não existir)
+        var defaultBranch = "main"
+        var created = false
+        let (rc, rd) = try await call("GET", "/repos/\(slug)")
+        if rc == 200 {
+            defaultBranch = (GitHub.json(rd)["default_branch"] as? String) ?? "main"
+        } else if rc == 404 {
+            let prefix = me.lowercased() + "/"
+            guard slug.lowercased().hasPrefix(prefix) else {
+                throw GHError(msg: "O repositório \(slug) não existe (ou você não tem acesso).")
+            }
+            let name = String(slug.dropFirst(prefix.count))
+            let (c2, d2) = try await call("POST", "/user/repos", body: ["name": name, "private": true, "auto_init": true])
+            guard c2 == 201 else { throw fail("Não consegui criar o repositório", c2, d2) }
+            defaultBranch = (GitHub.json(d2)["default_branch"] as? String) ?? "main"
+            created = true
+            say("Repositório \(slug) criado (privado).")
+        } else {
+            throw fail("Erro ao acessar \(slug)", rc, rd)
+        }
+        let wanted = branch.trimmingCharacters(in: .whitespaces)
+        let target = wanted.isEmpty ? defaultBranch : wanted
+
+        // 3) commit pai
+        var parent = try await headRefRetry(slug, target, tries: created ? 6 : 1)
+        let branchExists = parent != nil
+        if parent == nil { parent = try await headRefRetry(slug, defaultBranch, tries: created ? 6 : 1) }
+        guard let parentSha = parent else {
+            throw GHError(msg: "O repositório está vazio. Crie-o com um README no GitHub (ou apague-o e deixe o CodeLab criar).")
+        }
+        var lastTree: String? = nil
+        if !replaceAll && !created {
+            let (cc, cd) = try await call("GET", "/repos/\(slug)/git/commits/\(parentSha)")
+            guard cc == 200, let bt = (GitHub.json(cd)["tree"] as? [String: Any])?["sha"] as? String else {
+                throw fail("Erro ao ler o commit atual", cc, cd)
+            }
+            lastTree = bt
+        }
+
+        // 4) arquivos: texto vai direto na árvore, binário vira blob
+        var entries: [[String: Any]] = []
+        var sizes: [Int] = []
+        for (i, rel) in files.enumerated() {
+            let data = try Data(contentsOf: tmp.appendingPathComponent(rel))
+            if data.count > 95_000_000 { throw GHError(msg: rel + " passa de 95 MB (o limite do GitHub é 100 MB).") }
+            if !data.isEmpty, !data.contains(0), let text = String(data: data, encoding: .utf8) {
+                entries.append(["path": rel, "mode": "100644", "type": "blob", "content": text])
+                sizes.append(data.count)
+            } else {
+                let (bc, bd) = try await call("POST", "/repos/\(slug)/git/blobs", body: ["content": data.base64EncodedString(), "encoding": "base64"])
+                guard bc == 201, let bsha = GitHub.json(bd)["sha"] as? String else { throw fail("Falha ao enviar " + rel, bc, bd) }
+                entries.append(["path": rel, "mode": "100644", "type": "blob", "sha": bsha])
+                sizes.append(300)
+            }
+            if i % 25 == 0 { say("Preparando \(i + 1)/\(files.count)…") }
+        }
+
+        // 5) árvore (em partes, mas continua sendo um commit só)
+        var i = 0
+        while i < entries.count {
+            var j = i
+            var total = 0
+            while j < entries.count && (j - i) < 200 && total < 4_000_000 {
+                total += sizes[j]
+                j += 1
+            }
+            var body: [String: Any] = ["tree": Array(entries[i..<j])]
+            if let b = lastTree { body["base_tree"] = b }
+            let (tc, td) = try await call("POST", "/repos/\(slug)/git/trees", body: body)
+            guard tc == 201, let t = GitHub.json(td)["sha"] as? String else { throw fail("Falha ao montar os arquivos", tc, td) }
+            lastTree = t
+            i = j
+            say("Montando… \(j)/\(entries.count)")
+        }
+        guard let finalTree = lastTree else { throw GHError(msg: "Nada para enviar.") }
+
+        // 6) o commit
+        let trimmed = message.trimmingCharacters(in: .whitespacesAndNewlines)
+        let msg = trimmed.isEmpty ? "Importado do .zip pelo CodeLab" : trimmed
+        let parents: [String] = created ? [] : [parentSha]
+        let (mc, md) = try await call("POST", "/repos/\(slug)/git/commits", body: ["message": msg, "tree": finalTree, "parents": parents])
+        guard mc == 201, let newSha = GitHub.json(md)["sha"] as? String else { throw fail("Falha ao criar o commit", mc, md) }
+
+        if branchExists {
+            let (uc, ud) = try await call("PATCH", "/repos/\(slug)/git/refs/heads/\(target)", body: ["sha": newSha, "force": created])
+            guard uc == 200 else { throw fail("Falha ao atualizar a branch", uc, ud) }
+        } else {
+            let (c3, d3) = try await call("POST", "/repos/\(slug)/git/refs", body: ["ref": "refs/heads/" + target, "sha": newSha])
+            guard c3 == 201 else { throw fail("Falha ao criar a branch " + target, c3, d3) }
+        }
+        say("✓ 1 commit com \(files.count) arquivo(s) enviado para \(slug) (\(target)).")
+        return slug
+    }
+
     // MARK: atalho usado pelos botões do app
 
     func syncAndPush(dir: URL, repo: String, say: (String) -> Void) async throws -> String {

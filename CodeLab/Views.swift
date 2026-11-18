@@ -23,6 +23,7 @@ struct RootView: View {
     @StateObject private var gh = GitHub()
     @StateObject private var store = Store()
     @State private var showGH = false
+    @State private var showZip = false
     @State private var showImporter = false
     @State private var importMsg = ""
     @State private var showImportMsg = false
@@ -43,9 +44,10 @@ struct RootView: View {
                 .padding()
             }
             .navigationTitle("CodeLab")
+            .sheet(isPresented: $showZip) { ZipToGitView().environmentObject(gh) }
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
-                    Button { showImporter = true } label: { Image(systemName: "square.and.arrow.down") }
+                    Button { showZip = true } label: { Image(systemName: "square.and.arrow.up") }
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button(gh.user.map { "@" + $0 } ?? "Entrar no GitHub") { showGH = true }
