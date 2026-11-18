@@ -73,10 +73,35 @@ struct ZipToGitView: View {
             .navigationTitle(".zip → GitHub")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .navigationBarTrailing) { Button("Fechar") { pm.wrappedValue.dismiss() } } }
-            .fileImporter(isPresented: $showPicker, allowedContentTypes: [.zip], allowsMultipleSelection: false) { result in
-                if case .success(let urls) = result, let u = urls.first { zipURL = u }
-            }
         }
         .navigationViewStyle(.stack)
+        .sheet(isPresented: $showPicker) {
+            ZipPicker { url in zipURL = url }
+        }
+    }
+}
+
+/// Seletor de arquivos nativo (UIDocumentPicker). Copia o .zip para dentro do app ao escolher.
+struct ZipPicker: UIViewControllerRepresentable {
+    let onPick: (URL) -> Void
+
+    func makeCoordinator() -> Coordinator { Coordinator(onPick) }
+
+    func makeUIViewController(context: Context) -> UIDocumentPickerViewController {
+        let types: [UTType] = [UTType.zip, UTType(filenameExtension: "zip")].compactMap { $0 }
+        let vc = UIDocumentPickerViewController(forOpeningContentTypes: types, asCopy: true)
+        vc.allowsMultipleSelection = false
+        vc.delegate = context.coordinator
+        return vc
+    }
+
+    func updateUIViewController(_ uiViewController: UIDocumentPickerViewController, context: Context) {}
+
+    final class Coordinator: NSObject, UIDocumentPickerDelegate {
+        let onPick: (URL) -> Void
+        init(_ onPick: @escaping (URL) -> Void) { self.onPick = onPick }
+        func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
+            if let u = urls.first { onPick(u) }
+        }
     }
 }
