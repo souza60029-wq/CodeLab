@@ -433,7 +433,7 @@ final class GitHub: ObservableObject {
 
     // MARK: ZIP → GitHub em um único commit (como o ZipToGit)
 
-    func zipToGit(zip: URL, repo: String, branch: String, message: String, replaceAll: Bool, say: (String) -> Void) async throws -> String {
+    func zipToGit(zip: URL, repo: String, branch: String, message: String, replaceAll: Bool, say: (String) -> Void) async throws -> (slug: String, branch: String) {
         guard let me = user else { throw GHError(msg: "Entre no GitHub primeiro (botão no topo do menu).") }
         guard let slug = Repo.normalize(repo, user: me) else {
             throw GHError(msg: "Nome de repositório inválido. Use usuario/repositorio ou só o nome.")
@@ -542,7 +542,7 @@ final class GitHub: ObservableObject {
             guard c3 == 201 else { throw fail("Falha ao criar a branch " + target, c3, d3) }
         }
         say("✓ 1 commit com \(files.count) arquivo(s) enviado para \(slug) (\(target)).")
-        return slug
+        return (slug: slug, branch: target)
     }
 
     // MARK: atalho usado pelos botões do app

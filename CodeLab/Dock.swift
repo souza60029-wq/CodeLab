@@ -38,7 +38,7 @@ enum Recents {
 // MARK: - Estado global do app
 
 final class AppState: ObservableObject {
-    enum Tab: Int, CaseIterable { case home, terminal, profile }
+    enum Tab: Int, CaseIterable { case home, build, terminal, profile }
 
     @Published var tab: Tab = .home
     @Published var coding = false
@@ -134,6 +134,7 @@ struct RootView: View {
         ZStack(alignment: .bottom) {
             ZStack {
                 layer(.home) { HomeView() }
+                layer(.build) { NavigationView { BuildView() }.navigationViewStyle(.stack) }
                 layer(.terminal) { NavigationView { TerminalView() }.navigationViewStyle(.stack) }
                 layer(.profile) { NavigationView { ProfileView() }.navigationViewStyle(.stack) }
             }
@@ -169,7 +170,8 @@ struct DockView: View {
     }
 
     let entries: [Entry] = [
-        Entry(tab: .home, title: "Início", icon: "house", iconSelected: "house.fill"),
+        Entry(tab: .home, title: "Projetos", icon: "chevron.left.forwardslash.chevron.right", iconSelected: "chevron.left.forwardslash.chevron.right"),
+        Entry(tab: .build, title: "Build", icon: "hammer", iconSelected: "hammer.fill"),
         Entry(tab: .terminal, title: "Terminal", icon: "terminal", iconSelected: "terminal.fill"),
         Entry(tab: .profile, title: "Perfil", icon: "person.crop.circle", iconSelected: "person.crop.circle.fill")
     ]
@@ -254,7 +256,7 @@ struct DockView: View {
 struct HomeView: View {
     @EnvironmentObject var gh: GitHub
     @EnvironmentObject var store: Store
-    @State private var showZip = false
+    @EnvironmentObject var app: AppState
     @State private var recents: [RecentItem] = []
 
     func loadRecents() {
@@ -282,10 +284,33 @@ struct HomeView: View {
         .cornerRadius(12)
     }
 
+    var buildBanner: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "hammer.fill")
+                .font(.system(size: 20))
+                .foregroundColor(.accentColor)
+                .frame(width: 38, height: 38)
+                .background(Color.accentColor.opacity(0.15))
+                .cornerRadius(10)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Enviar .zip e compilar").font(.subheadline.weight(.semibold))
+                Text("Acompanhe as etapas e receba o APK ou IPA").font(.caption).foregroundColor(.secondary)
+            }
+            Spacer()
+            Image(systemName: "chevron.right").font(.caption).foregroundColor(.secondary)
+        }
+        .foregroundColor(.primary)
+        .padding(12)
+        .background(Color(.secondarySystemBackground))
+        .cornerRadius(12)
+    }
+
     var body: some View {
         NavigationView {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
+                    Button { app.select(.build) } label: { buildBanner }
+                        .buttonStyle(PressableStyle())
                     if !recents.isEmpty {
                         VStack(alignment: .leading, spacing: 8) {
                             Text("Recentes").font(.headline)
@@ -311,12 +336,6 @@ struct HomeView: View {
             }
             .dockInset()
             .navigationTitle("CodeLab")
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button { showZip = true } label: { Image(systemName: "square.and.arrow.up") }
-                }
-            }
-            .sheet(isPresented: $showZip) { ZipToGitView().environmentObject(gh) }
             .onAppear { loadRecents() }
         }
         .navigationViewStyle(.stack)

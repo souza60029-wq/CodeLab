@@ -24,7 +24,7 @@ Feito para funcionar bem em telas pequenas, a partir do iPhone 6s com iOS 15.
 
 - **Compila Android e iOS sem computador.** O CodeLab envia o projeto, o GitHub Actions monta o APK ou o IPA e o app baixa o resultado de volta. Em seguida, o botão **Instalar / compartilhar** abre o arquivo direto no TrollStore, em Arquivos ou por AirDrop.
 - **Roda C/C++ e Java no próprio aparelho, offline.** Sem servidor, sem conta e sem espera; ideal para estudar lógica de programação.
-- **Importar .zip em um único commit.** Um projeto inteiro sobe de uma vez, sem poluir o histórico com um commit por arquivo.
+- **Da .zip ao APK/IPA em um toque.** A aba **Build** envia o .zip em um único commit, dispara o build, mostra cada etapa ao vivo e baixa o resultado para o aparelho.
 - **Navegador de arquivos com dois modos.** Ícones, como no app Arquivos do iOS, ou árvore, como no Android Studio, com menu de contexto completo.
 - **Busca em todo o projeto** e **exportação em .zip** para backup ou envio.
 - **Modelos prontos** (FizzBuzz, números primos, Fibonacci…) que rodam na hora, para começar a praticar.
@@ -64,7 +64,7 @@ Feito para funcionar bem em telas pequenas, a partir do iPhone 6s com iOS 15.
 ### GitHub
 - **Login oficial**: a página do GitHub abre dentro do app, com email, senha e verificação em 2 etapas.
 - Envio do projeto (add, commit e push) direto do app.
-- **Importar .zip em um único commit**, no estilo do ZipToGit: escolha o arquivo, o repositório e a branch. Se o repositório não existir, ele é criado.
+- **Aba Build**: escolha um .zip, o repositório e a branch. O CodeLab envia tudo em **um único commit** (no estilo do ZipToGit), dispara o workflow, mostra as **etapas ao vivo** (abrir, enviar, iniciar, compilar, baixar) com o tempo decorrido e entrega o APK ou IPA pronto para instalar ou compartilhar. Mantém um histórico dos últimos builds.
 - Perfil com foto, nome, números da conta e repositórios recentes, mais um atalho para abrir a pasta do CodeLab no app Arquivos.
 - Execução do workflow e leitura do resultado dentro do app.
 
@@ -77,7 +77,7 @@ Feito para funcionar bem em telas pequenas, a partir do iPhone 6s com iOS 15.
 - Terminal real (`ios_system`) para `sed`, `awk`, `tar`, `curl`, `find`, `sort` e outros utilitários.
 
 ### Interface
-- Barra inferior com **Início**, **Terminal** e **Perfil**; o conteúdo sobe junto, sem ficar escondido atrás dela.
+- Barra inferior com **Projetos**, **Build**, **Terminal** e **Perfil**; o conteúdo sobe junto, sem ficar escondido atrás dela.
 - **Animações fluidas** (opcional): transições com mola e um borrão de movimento ao trocar de aba, e resposta ao toque nos botões.
 - Ao editar código, a barra encolhe para uma faixa fina, ou some, conforme a configuração.
 - Desfoque da barra, ocultar ao programar e tamanho da fonte em **Perfil → Configurações**.
@@ -126,7 +126,7 @@ CodeLab/
 ├── GitHub.swift         API do GitHub, login e envio
 ├── GitEngine.swift      git sobre a API do GitHub
 ├── GitHubWeb.swift      página de login do GitHub dentro do app
-├── ZipToGit.swift       importar .zip em um commit
+├── ZipToGit.swift       aba Build: .zip, etapas ao vivo e resultado
 ├── Importer.swift       abrir projetos e .zip locais
 ├── Models.swift         linguagens e armazenamento
 ├── Templates.swift      projetos iniciais e workflows
