@@ -148,6 +148,7 @@ struct ProjectsView: View {
                 }
             }
         }
+        .dockInset()
         .navigationTitle(lang.title)
         .onAppear { items = store.projects(lang) }
         .fileImporter(isPresented: $showImporter, allowedContentTypes: [.zip, .folder], allowsMultipleSelection: false) { result in
@@ -267,6 +268,7 @@ struct ProjectView: View {
                 NavigationLink("Abrir terminal nesta pasta", destination: TerminalView(start: dir))
             }
         }
+        .dockInset()
         .navigationTitle("Ferramentas")
         .sheet(item: $shareItem) { item in ShareSheet(items: [item.url]) }
         .onAppear {
@@ -397,6 +399,7 @@ struct FolderView: View {
     let dir: URL
     var body: some View {
         List { FolderListSection(dir: dir) }
+            .dockInset()
             .navigationTitle(dir.lastPathComponent)
     }
 }

@@ -387,6 +387,7 @@ struct IDEView: View {
             src += read(dir.appendingPathComponent(f)) + "\n"
         }
         output = Interp(java: lang == .java).run(src)
+        UINotificationFeedbackGenerator().notificationOccurred(output.contains("[erro]") ? .error : .success)
         showOut = true
     }
 
@@ -451,6 +452,7 @@ struct IDEView: View {
                 Spacer()
             }
         }
+        .dockInset()
         .navigationTitle(current?.lastPathComponent ?? name)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {

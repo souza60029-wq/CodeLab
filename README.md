@@ -65,16 +65,20 @@ Feito para funcionar bem em telas pequenas, a partir do iPhone 6s com iOS 15.
 - **Login oficial**: a página do GitHub abre dentro do app, com email, senha e verificação em 2 etapas.
 - Envio do projeto (add, commit e push) direto do app.
 - **Importar .zip em um único commit**, no estilo do ZipToGit: escolha o arquivo, o repositório e a branch. Se o repositório não existir, ele é criado.
-- Perfil com foto, nome, números da conta e repositórios recentes.
+- Perfil com foto, nome, números da conta e repositórios recentes, mais um atalho para abrir a pasta do CodeLab no app Arquivos.
 - Execução do workflow e leitura do resultado dentro do app.
 
 ### Terminal
+- **Sugestões enquanto você digita**: comandos, subcomandos do git e nomes de pastas e arquivos da pasta atual, em botões que completam com um toque; a tecla **Tab** completa a primeira sugestão. Com o campo vazio, nada aparece.
+- Saída com cores (erros em vermelho, sucessos em verde, comandos em destaque), histórico salvo entre as sessões, setas ↑ ↓ para repetir comandos e atalhos `/ ~ - . | >` acima do teclado.
+- Menu para copiar toda a saída ou limpar a tela.
 - Comandos de arquivo (`ls`, `cd`, `cat`, `cp`, `mv`, `rm`, `mkdir`…).
 - `git` integrado ao GitHub: `clone`, `status`, `add`, `commit`, `push`, `pull`, `log`.
 - Terminal real (`ios_system`) para `sed`, `awk`, `tar`, `curl`, `find`, `sort` e outros utilitários.
 
 ### Interface
-- Barra inferior com **Início**, **Terminal** e **Perfil**.
+- Barra inferior com **Início**, **Terminal** e **Perfil**; o conteúdo sobe junto, sem ficar escondido atrás dela.
+- **Animações fluidas** (opcional): transições com mola e um borrão de movimento ao trocar de aba, e resposta ao toque nos botões.
 - Ao editar código, a barra encolhe para uma faixa fina, ou some, conforme a configuração.
 - Desfoque da barra, ocultar ao programar e tamanho da fonte em **Perfil → Configurações**.
 

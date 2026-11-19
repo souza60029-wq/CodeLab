@@ -62,9 +62,16 @@ struct CodeEditor: UIViewRepresentable {
 
         // MARK: delegate
 
+        var pending: DispatchWorkItem? = nil
+
         func textViewDidChange(_ tv: UITextView) {
             parent.text = tv.text
-            highlight(tv)
+            pending?.cancel()
+            let w = DispatchWorkItem { [weak self, weak tv] in
+                if let tv = tv { self?.highlight(tv) }
+            }
+            pending = w
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.06, execute: w)
         }
 
         func textViewDidChangeSelection(_ tv: UITextView) {

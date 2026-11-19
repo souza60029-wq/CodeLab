@@ -1063,6 +1063,13 @@ final class TerminalModel: ObservableObject {
 
 // MARK: - Telas
 
+struct Completion: Identifiable {
+    let id = UUID()
+    let label: String
+    let result: String
+    let icon: String
+}
+
 struct TerminalView: View {
     var start: URL? = nil
     @EnvironmentObject var gh: GitHub
@@ -1076,31 +1083,153 @@ struct TerminalView: View {
         self.start = start
     }
 
+    static let extraCmds = ["sed", "awk", "tar", "gzip", "curl", "find", "diff", "du", "stat", "sort", "uniq", "tr"]
+    static let pathCmds: Set<String> = ["cd", "ls", "cat", "head", "tail", "grep", "rm", "mv", "cp", "mkdir", "touch",
+                                         "wc", "tree", "sed", "awk", "tar", "gzip", "find", "diff", "du", "stat", "sort", "uniq", "git"]
+
+    // MARK: sugestões (só aparecem enquanto você digita)
+
+    func completions() -> [Completion] {
+        let s = input
+        if s.trimmingCharacters(in: .whitespaces).isEmpty { return [] }
+        let endsSpace = s.hasSuffix(" ")
+        let toks = s.split(separator: " ", omittingEmptySubsequences: true).map(String.init)
+        guard let cmd = toks.first else { return [] }
+        var out: [Completion] = []
+
+        // 1) primeira palavra: comandos
+        if toks.count == 1 && !endsSpace {
+            let q = cmd.lowercased()
+            for c in m.suggestions(for: s) {
+                out.append(Completion(label: c.cmd, result: c.insert, icon: "terminal"))
+            }
+            for n in Catalog.localNames + TerminalView.extraCmds where n.hasPrefix(q) && n != q {
+                if !out.contains(where: { $0.result == n || $0.result.hasPrefix(n + " ") }) {
+                    out.append(Completion(label: n, result: n + " ", icon: "chevron.right"))
+                }
+            }
+            return Array(out.prefix(10))
+        }
+
+        // 2) git <subcomando>
+        if cmd == "git" && ((toks.count == 1 && endsSpace) || (toks.count == 2 && !endsSpace)) {
+            let prefix = toks.count == 2 ? toks[1].lowercased() : ""
+            for sub in Catalog.gitSubs where sub.hasPrefix(prefix) && sub != prefix {
+                out.append(Completion(label: "git " + sub, result: "git " + sub + " ", icon: "arrow.triangle.branch"))
+            }
+            return out
+        }
+
+        // 3) caminhos
+        guard TerminalView.pathCmds.contains(cmd) else { return [] }
+        if cmd == "git" {
+            let sub = toks.count > 1 ? toks[1] : ""
+            if !["add", "rm", "reset"].contains(sub) { return [] }
+        }
+        let last = endsSpace ? "" : (toks.last ?? "")
+        if last.hasPrefix("-") { return [] }
+        var dirPart = ""
+        var namePart = last
+        if let r = last.range(of: "/", options: .backwards) {
+            dirPart = String(last[..<r.upperBound])
+            namePart = String(last[r.upperBound...])
+        }
+        var base = m.cwd
+        if dirPart.hasPrefix("~/") {
+            base = Store.root.appendingPathComponent(String(dirPart.dropFirst(2)))
+        } else if dirPart.hasPrefix("/") {
+            base = Store.root.appendingPathComponent(String(dirPart.dropFirst()))
+        } else if !dirPart.isEmpty {
+            base = m.cwd.appendingPathComponent(dirPart)
+        }
+        let names = (try? FileManager.default.contentsOfDirectory(atPath: base.path)) ?? []
+        let showHidden = namePart.hasPrefix(".")
+        var entries: [(String, Bool)] = []
+        for n in names where n.lowercased().hasPrefix(namePart.lowercased()) && (showHidden || !n.hasPrefix(".")) && n != ".codelab" {
+            var d: ObjCBool = false
+            FileManager.default.fileExists(atPath: base.appendingPathComponent(n).path, isDirectory: &d)
+            if cmd == "cd" && !d.boolValue { continue }
+            entries.append((n, d.boolValue))
+        }
+        entries.sort { x, y in
+            if x.1 != y.1 { return x.1 }
+            return x.0.lowercased() < y.0.lowercased()
+        }
+        let head = String(s.dropLast(last.count))
+        for e in entries.prefix(12) {
+            out.append(Completion(label: e.0 + (e.1 ? "/" : ""),
+                                  result: head + dirPart + e.0 + (e.1 ? "/" : " "),
+                                  icon: e.1 ? "folder" : "doc"))
+        }
+        return out
+    }
+
+    // MARK: saída com cores
+
+    func lineView(_ l: String) -> some View {
+        let low = l.lowercased()
+        let isCmd = l.hasPrefix("~") && l.contains(" $ ")
+        let isErr = low.hasPrefix("erro") || low.hasPrefix("error") || low.hasPrefix("fatal") || l.hasPrefix("✗") || l.hasPrefix("❌")
+        let isOk = l.hasPrefix("✓") || l.hasPrefix("✅")
+        let isWarn = l.hasPrefix("⚠️")
+        let color: Color = isCmd ? .accentColor : (isErr ? .red : (isOk ? .green : (isWarn ? .orange : .primary)))
+        return Text(l.isEmpty ? " " : l)
+            .font(.system(size: 13, weight: isCmd ? .semibold : .regular, design: .monospaced))
+            .foregroundColor(color)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .textSelection(.enabled)
+    }
+
+    // MARK: corpo
+
     var body: some View {
-        VStack(spacing: 0) {
+        let comps = completions()
+        let lines = Array(m.out.components(separatedBy: "\n").suffix(800))
+        return VStack(spacing: 0) {
             ScrollViewReader { proxy in
                 ScrollView {
-                    Text(m.out)
-                        .font(.system(.footnote, design: .monospaced))
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(8)
-                        .textSelection(.enabled)
-                    Color.clear.frame(height: 1).id("end")
+                    LazyVStack(alignment: .leading, spacing: 1) {
+                        ForEach(Array(lines.enumerated()), id: \.offset) { item in
+                            lineView(item.element)
+                        }
+                        Color.clear.frame(height: 1).id("end")
+                    }
+                    .padding(8)
                 }
                 .onChange(of: m.out) { _ in
-                    proxy.scrollTo("end", anchor: .bottom)
+                    withAnimation(.easeOut(duration: 0.15)) { proxy.scrollTo("end", anchor: .bottom) }
                 }
             }
             Divider()
             hintBar
-            suggestionBar
+            if !comps.isEmpty {
+                completionBar(comps)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
             inputRow
         }
+        .animation(.easeInOut(duration: 0.15), value: comps.isEmpty)
+        .dockInset()
         .navigationTitle("Terminal")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
-                Button { showHelp = true } label: { Image(systemName: "questionmark.circle") }
+                Menu {
+                    Button { showHelp = true } label: { Label("Comandos", systemImage: "questionmark.circle") }
+                    Button { UIPasteboard.general.string = m.out } label: { Label("Copiar tudo", systemImage: "doc.on.doc") }
+                    Button(role: .destructive) { m.out = "" } label: { Label("Limpar", systemImage: "trash") }
+                } label: { Image(systemName: "ellipsis.circle") }
+            }
+            ToolbarItemGroup(placement: .keyboard) {
+                Button("Tab") { applyFirst() }
+                Button { histUp() } label: { Image(systemName: "arrow.up") }
+                Button { histDown() } label: { Image(systemName: "arrow.down") }
+                Spacer()
+                ForEach(["/", "~", "-", ".", "|", ">"], id: \.self) { sym in
+                    Button(sym) { input += sym }
+                }
+                Spacer()
+                Button { focused = false } label: { Image(systemName: "keyboard.chevron.compact.down") }
             }
         }
         .sheet(isPresented: $showHelp) {
@@ -1114,6 +1243,7 @@ struct TerminalView: View {
             if !m.started {
                 m.started = true
                 if let s = start { m.cwd = s }
+                m.history = UserDefaults.standard.stringArray(forKey: "termHistory") ?? []
             }
             m.refresh()
         }
@@ -1131,10 +1261,11 @@ struct TerminalView: View {
                 }
                 .padding(.horizontal, 10)
                 .padding(.vertical, 4)
-            } else if input.isEmpty, let n = m.next {
+            } else if input.isEmpty, Prefs.terminalTips, let n = m.next {
                 HStack {
                     Text("💡 " + n.desc).font(.caption).foregroundColor(.secondary)
                     Spacer()
+                    Button("Usar") { input = n.insert; focused = true }.font(.caption.bold())
                 }
                 .padding(.horizontal, 10)
                 .padding(.vertical, 4)
@@ -1142,22 +1273,27 @@ struct TerminalView: View {
         }
     }
 
-    var suggestionBar: some View {
+    func completionBar(_ comps: [Completion]) -> some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
-                ForEach(m.suggestions(for: input), id: \.cmd) { c in
+                ForEach(comps) { c in
                     Button {
-                        input = c.insert
+                        input = c.result
                         focused = true
+                        UISelectionFeedbackGenerator().selectionChanged()
                     } label: {
-                        Text(c.cmd)
-                            .font(.system(.caption, design: .monospaced))
-                            .foregroundColor(.primary)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 6)
-                            .background(Color(.secondarySystemBackground))
-                            .cornerRadius(8)
+                        HStack(spacing: 5) {
+                            Image(systemName: c.icon).font(.system(size: 11)).foregroundColor(.secondary)
+                            Text(c.label)
+                                .font(.system(.caption, design: .monospaced))
+                                .foregroundColor(.primary)
+                        }
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(Color(.secondarySystemBackground))
+                        .cornerRadius(8)
                     }
+                    .buttonStyle(PressableStyle())
                 }
             }
             .padding(.horizontal, 8)
@@ -1169,6 +1305,7 @@ struct TerminalView: View {
         HStack(spacing: 8) {
             Text(m.prompt)
                 .font(.system(.footnote, design: .monospaced))
+                .foregroundColor(.accentColor)
                 .lineLimit(1)
                 .truncationMode(.head)
                 .frame(maxWidth: 170, alignment: .leading)
@@ -1179,8 +1316,14 @@ struct TerminalView: View {
                 .focused($focused)
                 .submitLabel(.send)
                 .onSubmit { send() }
-            if m.busy { ProgressView() }
-            Button { recall() } label: { Image(systemName: "arrow.up") }
+            if m.busy {
+                ProgressView()
+            } else {
+                Button { send() } label: {
+                    Image(systemName: "arrow.up.circle.fill").font(.system(size: 26))
+                }
+                .disabled(input.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
@@ -1191,13 +1334,32 @@ struct TerminalView: View {
         input = ""
         histIdx = -1
         m.submit(l)
+        UserDefaults.standard.set(Array(m.history.suffix(100)), forKey: "termHistory")
         focused = true
     }
 
-    func recall() {
+    func applyFirst() {
+        if let c = completions().first {
+            input = c.result
+            UISelectionFeedbackGenerator().selectionChanged()
+        }
+    }
+
+    func histUp() {
         if m.history.isEmpty { return }
         histIdx = histIdx < 0 ? m.history.count - 1 : max(0, histIdx - 1)
         input = m.history[histIdx]
+    }
+
+    func histDown() {
+        if histIdx < 0 { return }
+        histIdx += 1
+        if histIdx >= m.history.count {
+            histIdx = -1
+            input = ""
+        } else {
+            input = m.history[histIdx]
+        }
     }
 }
 

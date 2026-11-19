@@ -4,6 +4,8 @@ import UIKit
 // MARK: - Preferências
 
 enum Prefs {
+    static var fluid: Bool { UserDefaults.standard.object(forKey: "fluidAnimations") as? Bool ?? true }
+    static var terminalTips: Bool { UserDefaults.standard.object(forKey: "terminalTips") as? Bool ?? true }
     static var autoPairs: Bool { UserDefaults.standard.object(forKey: "autoPairs") as? Bool ?? true }
     static var autoIndent: Bool { UserDefaults.standard.object(forKey: "autoIndent") as? Bool ?? true }
     static var tabWidth: Int {
@@ -41,6 +43,24 @@ final class AppState: ObservableObject {
     @Published var tab: Tab = .home
     @Published var coding = false
     @Published var keyboard = false
+    @Published var blurPhase: CGFloat = 0
+
+    var dockMini: Bool { coding && tab == .home }
+    var dockVisible: Bool { !keyboard && !(dockMini && UserDefaults.standard.bool(forKey: "hideDockCoding")) }
+    var dockHeight: CGFloat { dockVisible ? (dockMini ? 24 : 52) : 0 }
+
+    /// Troca de aba. Com animações fluidas, usa mola e um borrão de movimento que cresce no meio da transição.
+    func select(_ t: Tab) {
+        guard t != tab else { return }
+        if Prefs.fluid {
+            withAnimation(.spring(response: 0.42, dampingFraction: 0.86)) {
+                tab = t
+                blurPhase = blurPhase < 0.5 ? 1 : 0
+            }
+        } else {
+            tab = t
+        }
+    }
     private var observers: [NSObjectProtocol] = []
 
     init() {
@@ -54,42 +74,78 @@ final class AppState: ObservableObject {
     }
 }
 
+// MARK: - Efeitos
+
+/// Borrão de movimento: o raio cresce no meio da transição e volta a zero no fim.
+struct MotionBlur: ViewModifier, Animatable {
+    var phase: CGFloat
+    var animatableData: CGFloat {
+        get { phase }
+        set { phase = newValue }
+    }
+    func body(content: Content) -> some View {
+        content.blur(radius: abs(sin(phase * .pi)) * 7)
+    }
+}
+
+struct PressableStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed && Prefs.fluid ? 0.94 : 1)
+            .opacity(configuration.isPressed ? 0.85 : 1)
+            .animation(Prefs.fluid ? .spring(response: 0.25, dampingFraction: 0.6) : nil, value: configuration.isPressed)
+    }
+}
+
+/// Deixa espaço para a barra inferior: o conteúdo sobe em vez de ficar escondido.
+struct DockInset: ViewModifier {
+    @EnvironmentObject var app: AppState
+    func body(content: Content) -> some View {
+        content.safeAreaInset(edge: .bottom, spacing: 0) {
+            Color.clear.frame(height: app.dockHeight)
+        }
+    }
+}
+
+extension View {
+    func dockInset() -> some View { modifier(DockInset()) }
+}
+
 // MARK: - Raiz do app
 
 struct RootView: View {
     @StateObject private var gh = GitHub()
     @StateObject private var store = Store()
     @StateObject private var app = AppState()
-    @AppStorage("hideDockCoding") private var hideDock = false
 
-    var mini: Bool { app.coding && app.tab == .home }
-    var dockVisible: Bool { !app.keyboard && !(mini && hideDock) }
+    func layer<V: View>(_ t: AppState.Tab, @ViewBuilder _ content: () -> V) -> some View {
+        let sel = app.tab == t
+        let dir: CGFloat = t.rawValue < app.tab.rawValue ? -1 : 1
+        let fluid = Prefs.fluid
+        return content()
+            .opacity(sel ? 1 : 0)
+            .offset(x: fluid && !sel ? dir * 28 : 0)
+            .scaleEffect(fluid && !sel ? 0.98 : 1)
+            .allowsHitTesting(sel)
+            .accessibilityHidden(!sel)
+    }
 
     var body: some View {
-        ZStack {
-            HomeView()
-                .opacity(app.tab == .home ? 1 : 0)
-                .allowsHitTesting(app.tab == .home)
-                .accessibilityHidden(app.tab != .home)
-            NavigationView { TerminalView() }
-                .navigationViewStyle(.stack)
-                .opacity(app.tab == .terminal ? 1 : 0)
-                .allowsHitTesting(app.tab == .terminal)
-                .accessibilityHidden(app.tab != .terminal)
-            NavigationView { ProfileView() }
-                .navigationViewStyle(.stack)
-                .opacity(app.tab == .profile ? 1 : 0)
-                .allowsHitTesting(app.tab == .profile)
-                .accessibilityHidden(app.tab != .profile)
-        }
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            if dockVisible {
-                DockView(mini: mini)
+        ZStack(alignment: .bottom) {
+            ZStack {
+                layer(.home) { HomeView() }
+                layer(.terminal) { NavigationView { TerminalView() }.navigationViewStyle(.stack) }
+                layer(.profile) { NavigationView { ProfileView() }.navigationViewStyle(.stack) }
+            }
+            .modifier(MotionBlur(phase: app.blurPhase))
+
+            if app.dockVisible {
+                DockView(mini: app.dockMini)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
-        .animation(.easeInOut(duration: 0.22), value: dockVisible)
-        .animation(.easeInOut(duration: 0.22), value: mini)
+        .animation(Prefs.fluid ? .spring(response: 0.38, dampingFraction: 0.82) : .easeInOut(duration: 0.2), value: app.dockVisible)
+        .animation(Prefs.fluid ? .spring(response: 0.38, dampingFraction: 0.82) : .easeInOut(duration: 0.2), value: app.dockMini)
         .environmentObject(gh)
         .environmentObject(store)
         .environmentObject(app)
@@ -103,6 +159,7 @@ struct DockView: View {
     @EnvironmentObject var app: AppState
     @EnvironmentObject var gh: GitHub
     @AppStorage("blurEnabled") private var blur = true
+    @Namespace private var pill
 
     struct Entry {
         let tab: AppState.Tab
@@ -119,7 +176,7 @@ struct DockView: View {
 
     func select(_ t: AppState.Tab) {
         if app.tab != t { UIImpactFeedbackGenerator(style: .light).impactOccurred() }
-        app.tab = t
+        app.select(t)
     }
 
     func glyph(_ e: Entry, _ sel: Bool) -> some View {
@@ -153,6 +210,18 @@ struct DockView: View {
         }
         .foregroundColor(sel ? .accentColor : .secondary)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(
+            ZStack {
+                if sel && !mini && Prefs.fluid {
+                    Capsule()
+                        .fill(Color.accentColor.opacity(0.13))
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 4)
+                        .matchedGeometryEffect(id: "pill", in: pill)
+                        .scaleEffect(x: 1 + 0.4 * abs(sin(app.blurPhase * .pi)), y: 1)
+                }
+            }
+        )
         .contentShape(Rectangle())
     }
 
@@ -171,7 +240,7 @@ struct DockView: View {
         HStack(spacing: 0) {
             ForEach(entries, id: \.title) { e in
                 Button { select(e.tab) } label: { cell(e) }
-                    .buttonStyle(.plain)
+                    .buttonStyle(PressableStyle())
             }
         }
         .frame(height: mini ? 24 : 52)
@@ -222,6 +291,7 @@ struct HomeView: View {
                             Text("Recentes").font(.headline)
                             ForEach(recents) { r in
                                 NavigationLink(destination: IDEView(lang: r.lang, name: r.name)) { recentRow(r) }
+                                    .buttonStyle(PressableStyle())
                             }
                         }
                     }
@@ -232,12 +302,14 @@ struct HomeView: View {
                                 NavigationLink(destination: ProjectsView(lang: l)) {
                                     Card(icon: l.icon, title: l.title, sub: l.hint)
                                 }
+                                .buttonStyle(PressableStyle())
                             }
                         }
                     }
                 }
                 .padding()
             }
+            .dockInset()
             .navigationTitle("CodeLab")
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
@@ -345,6 +417,15 @@ struct ProfileView: View {
                 NavigationLink(destination: SettingsView()) {
                     Label("Configurações", systemImage: "gearshape")
                 }
+                Button {
+                    let path = Store.root.deletingLastPathComponent().path
+                    if let enc = path.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed),
+                       let u = URL(string: "shareddocuments://" + enc) {
+                        UIApplication.shared.open(u, options: [:], completionHandler: nil)
+                    }
+                } label: {
+                    Label("Abrir pasta no app Arquivos", systemImage: "folder")
+                }
             }
 
             if let login = gh.user {
@@ -367,6 +448,7 @@ struct ProfileView: View {
             .listRowBackground(Color.clear)
         }
         .listStyle(.insetGrouped)
+        .dockInset()
         .navigationTitle("Perfil")
         .navigationBarTitleDisplayMode(.inline)
         .sheet(isPresented: $showLogin) { GitHubLoginView().environmentObject(gh) }
@@ -384,6 +466,8 @@ struct SettingsView: View {
     @AppStorage("autoPairs") private var autoPairs = true
     @AppStorage("autoIndent") private var autoIndent = true
     @AppStorage("tabWidth") private var tabWidth = 4
+    @AppStorage("fluidAnimations") private var fluid = true
+    @AppStorage("terminalTips") private var tips = true
 
     var body: some View {
         Form {
@@ -409,7 +493,16 @@ struct SettingsView: View {
                 }
                 .pickerStyle(.segmented)
             }
+            Section(header: Text("Animações"),
+                    footer: Text("Transições com mola e efeito de movimento (um borrão que acompanha o deslize) ao trocar de aba, além de resposta ao toque nos botões. Desative em aparelhos mais lentos ou para economizar bateria.")) {
+                Toggle("Animações fluidas", isOn: $fluid)
+            }
+            Section(header: Text("Terminal"),
+                    footer: Text("As sugestões de comandos e de arquivos aparecem enquanto você digita. A dica abaixo aparece só com o campo vazio.")) {
+                Toggle("Dica do próximo passo", isOn: $tips)
+            }
         }
+        .dockInset()
         .navigationTitle("Configurações")
         .navigationBarTitleDisplayMode(.inline)
     }
