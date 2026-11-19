@@ -300,6 +300,7 @@ struct IDEView: View {
     let lang: Lang
     let name: String
     @EnvironmentObject var store: Store
+    @EnvironmentObject var app: AppState
     @State private var current: URL? = nil
     @State private var text = ""
     @State private var showFiles = false
@@ -385,12 +386,14 @@ struct IDEView: View {
             NavigationLink(destination: ProjectView(lang: lang, name: name), isActive: $showTools) { EmptyView() }
         )
         .onAppear {
+            app.coding = true
+            Recents.add(lang, name)
             if current == nil, let f = defaultFile() {
                 current = f
                 text = read(f)
             }
         }
-        .onDisappear { save() }
+        .onDisappear { save(); app.coding = false }
         .sheet(isPresented: $showFiles) {
             FileBrowser(
                 root: dir,

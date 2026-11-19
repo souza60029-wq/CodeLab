@@ -1,1 +1,115 @@
-# CodeLab
+<p align="center">
+  <img src="CodeLab/Assets.xcassets/AppIcon.appiconset/AppIcon.png" width="120" alt="CodeLab">
+</p>
+
+<h1 align="center">CodeLab</h1>
+
+<p align="center">
+  Um ambiente de programação para iPhone: escreva código, rode no aparelho, compile na nuvem e publique no GitHub.
+</p>
+
+---
+
+## Visão geral
+
+O iOS não permite compilar programas dentro do próprio aparelho. O CodeLab resolve isso combinando três coisas:
+
+1. **Um editor completo** no iPhone, com cores de sintaxe, corretor de erros e navegador de arquivos.
+2. **Execução local** de C/C++ e Java, sem precisar de internet.
+3. **O GitHub como servidor de build**: o app envia o projeto e o GitHub Actions compila Android (APK), iOS (IPA) e Godot, devolvendo o resultado.
+
+Feito para funcionar bem em telas pequenas, a partir do iPhone 6s com iOS 15.
+
+## Recursos
+
+### Editor
+- Realce de sintaxe para C/C++, Java, Kotlin, GDScript, Swift, Gradle, YAML e outros.
+- Corretor que aponta chaves e parênteses sem par, `;` ou `:` faltando, com botão **Corrigir**.
+- Tamanho da fonte ajustável.
+- Salvamento automático ao trocar de arquivo ou sair.
+
+### Arquivos
+- Dois modos de navegação, alternados por um botão:
+  - **Ícones**, no estilo do app Arquivos do iOS.
+  - **Árvore**, no estilo do Android Studio.
+- Segure em qualquer item para abrir as opções: abrir, renomear, duplicar, apagar, novo arquivo ou pasta.
+
+### Projetos
+| Tipo | Como roda |
+|---|---|
+| **C / C++** | No aparelho, pelo interpretador integrado |
+| **Java** | No aparelho, pelo interpretador integrado |
+| **Android** | Projeto vazio em Java ou Kotlin, com escolha da versão mínima do Android; o APK é gerado no GitHub Actions |
+| **iOS** | Projeto vazio em SwiftUI; o IPA é gerado no GitHub Actions |
+| **Godot** | Projeto com `project.godot` e script; validado no GitHub Actions |
+
+### GitHub
+- **Login oficial**: a página do GitHub abre dentro do app, com email, senha e verificação em 2 etapas.
+- Envio do projeto (add, commit e push) direto do app.
+- **Importar .zip em um único commit**, no estilo do ZipToGit: escolha o arquivo, o repositório e a branch. Se o repositório não existir, ele é criado.
+- Perfil com foto, nome, números da conta e repositórios recentes.
+- Execução do workflow e leitura do resultado dentro do app.
+
+### Terminal
+- Comandos de arquivo (`ls`, `cd`, `cat`, `cp`, `mv`, `rm`, `mkdir`…).
+- `git` integrado ao GitHub: `clone`, `status`, `add`, `commit`, `push`, `pull`, `log`.
+- Terminal real (`ios_system`) para `sed`, `awk`, `tar`, `curl`, `find`, `sort` e outros utilitários.
+
+### Interface
+- Barra inferior com **Início**, **Terminal** e **Perfil**.
+- Ao editar código, a barra encolhe para uma faixa fina, ou some, conforme a configuração.
+- Desfoque da barra, ocultar ao programar e tamanho da fonte em **Perfil → Configurações**.
+
+## Instalação
+
+O CodeLab é compilado pelo próprio GitHub Actions, sem Mac.
+
+1. Envie este repositório ao seu GitHub, com todos os arquivos, inclusive a pasta `.github`.
+2. Na aba **Actions**, aguarde o workflow **Build IPA** terminar (ele roda a cada commit na `main`).
+3. Baixe o artifact **CodeLab-ipa**, extraia o `.zip` e abra o `.ipa` no **TrollStore**.
+
+Identificador do app: `com.code.lab`. Requer iOS 15 ou superior.
+
+## Configurar o login com GitHub
+
+Uma vez só:
+
+1. No GitHub, abra **Settings → Developer settings → OAuth Apps → New OAuth App**.
+2. Use qualquer nome. Em Homepage e Callback, coloque `https://github.com`.
+3. Marque **Enable Device Flow** e salve.
+4. Copie o **Client ID** e cole no app, em **Perfil → Entrar com GitHub**.
+
+Depois disso, basta tocar em **Entrar com GitHub** e fazer o login normalmente na página que abre.
+
+## Limites conhecidos
+
+- **Execução local** (C/C++ e Java): suporta variáveis, `if`, `while`, `for`, funções, recursão, `printf`, `cout` e `System.out`. Ainda não há arrays, ponteiros, classes com objetos, entrada de dados (`cin`, `Scanner`) nem variáveis globais.
+- **Terminal**: não existe `gcc`, `javac` nem Python. O iOS não permite executar compiladores nativos; para isso use o botão de executar ou o GitHub Actions.
+- **Importar .zip**: arquivos de até 95 MB; a permissão de execução de scripts (`.sh`) não é preservada.
+- O GitHub Actions usa os minutos gratuitos da sua conta.
+
+## Estrutura
+
+```
+CodeLab/
+├── CodeLabApp.swift     ponto de entrada
+├── Dock.swift           barra inferior, início, perfil e configurações
+├── IDE.swift            editor de código e navegador de arquivos
+├── CodeEditor.swift     editor com realce de sintaxe
+├── Linter.swift         corretor de erros
+├── Interp.swift         interpretador de C/C++ e Java
+├── Terminal.swift       terminal e comandos
+├── RealShell.swift      ponte com o ios_system
+├── GitHub.swift         API do GitHub, login e envio
+├── GitEngine.swift      git sobre a API do GitHub
+├── GitHubWeb.swift      página de login do GitHub dentro do app
+├── ZipToGit.swift       importar .zip em um commit
+├── Importer.swift       abrir projetos e .zip locais
+├── Models.swift         linguagens e armazenamento
+├── Templates.swift      projetos iniciais e workflows
+└── Views.swift          telas de projetos e login
+```
+
+## Créditos
+
+- [`ios_system`](https://github.com/holzschu/ios_system), de Nicolas Holzschuch, é a base do terminal real.

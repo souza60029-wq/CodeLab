@@ -1,0 +1,396 @@
+import SwiftUI
+import UIKit
+
+// MARK: - Preferências
+
+enum Prefs {
+    static var editorFontSize: CGFloat {
+        let v = UserDefaults.standard.double(forKey: "editorFontSize")
+        return v < 8 ? 15 : CGFloat(v)
+    }
+}
+
+struct RecentItem: Identifiable {
+    let lang: Lang
+    let name: String
+    var id: String { lang.rawValue + "|" + name }
+}
+
+enum Recents {
+    static func list() -> [String] { UserDefaults.standard.stringArray(forKey: "recents") ?? [] }
+    static func add(_ l: Lang, _ n: String) {
+        var a = list()
+        let k = l.rawValue + "|" + n
+        a.removeAll { $0 == k }
+        a.insert(k, at: 0)
+        UserDefaults.standard.set(Array(a.prefix(6)), forKey: "recents")
+    }
+}
+
+// MARK: - Estado global do app
+
+final class AppState: ObservableObject {
+    enum Tab: Int, CaseIterable { case home, terminal, profile }
+
+    @Published var tab: Tab = .home
+    @Published var coding = false
+    @Published var keyboard = false
+    private var observers: [NSObjectProtocol] = []
+
+    init() {
+        let nc = NotificationCenter.default
+        observers.append(nc.addObserver(forName: UIResponder.keyboardWillShowNotification, object: nil, queue: .main) { [weak self] _ in
+            self?.keyboard = true
+        })
+        observers.append(nc.addObserver(forName: UIResponder.keyboardWillHideNotification, object: nil, queue: .main) { [weak self] _ in
+            self?.keyboard = false
+        })
+    }
+}
+
+// MARK: - Raiz do app
+
+struct RootView: View {
+    @StateObject private var gh = GitHub()
+    @StateObject private var store = Store()
+    @StateObject private var app = AppState()
+    @AppStorage("hideDockCoding") private var hideDock = false
+
+    var mini: Bool { app.coding && app.tab == .home }
+    var dockVisible: Bool { !app.keyboard && !(mini && hideDock) }
+
+    var body: some View {
+        ZStack {
+            HomeView()
+                .opacity(app.tab == .home ? 1 : 0)
+                .allowsHitTesting(app.tab == .home)
+                .accessibilityHidden(app.tab != .home)
+            NavigationView { TerminalView() }
+                .navigationViewStyle(.stack)
+                .opacity(app.tab == .terminal ? 1 : 0)
+                .allowsHitTesting(app.tab == .terminal)
+                .accessibilityHidden(app.tab != .terminal)
+            NavigationView { ProfileView() }
+                .navigationViewStyle(.stack)
+                .opacity(app.tab == .profile ? 1 : 0)
+                .allowsHitTesting(app.tab == .profile)
+                .accessibilityHidden(app.tab != .profile)
+        }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if dockVisible {
+                DockView(mini: mini)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .animation(.easeInOut(duration: 0.22), value: dockVisible)
+        .animation(.easeInOut(duration: 0.22), value: mini)
+        .environmentObject(gh)
+        .environmentObject(store)
+        .environmentObject(app)
+    }
+}
+
+// MARK: - Dock
+
+struct DockView: View {
+    let mini: Bool
+    @EnvironmentObject var app: AppState
+    @EnvironmentObject var gh: GitHub
+    @AppStorage("blurEnabled") private var blur = true
+
+    struct Entry {
+        let tab: AppState.Tab
+        let title: String
+        let icon: String
+        let iconSelected: String
+    }
+
+    let entries: [Entry] = [
+        Entry(tab: .home, title: "Início", icon: "house", iconSelected: "house.fill"),
+        Entry(tab: .terminal, title: "Terminal", icon: "terminal", iconSelected: "terminal.fill"),
+        Entry(tab: .profile, title: "Perfil", icon: "person.crop.circle", iconSelected: "person.crop.circle.fill")
+    ]
+
+    func select(_ t: AppState.Tab) {
+        if app.tab != t { UIImpactFeedbackGenerator(style: .light).impactOccurred() }
+        app.tab = t
+    }
+
+    func glyph(_ e: Entry, _ sel: Bool) -> some View {
+        Group {
+            if e.tab == .profile, let s = gh.avatarURL, let u = URL(string: s) {
+                AsyncImage(url: u) { img in
+                    img.resizable().scaledToFill()
+                } placeholder: {
+                    Color.gray.opacity(0.3)
+                }
+                .frame(width: 24, height: 24)
+                .clipShape(Circle())
+                .overlay(Circle().stroke(sel ? Color.accentColor : Color.clear, lineWidth: 2))
+            } else {
+                Image(systemName: sel ? e.iconSelected : e.icon).font(.system(size: 22))
+            }
+        }
+    }
+
+    func cell(_ e: Entry) -> some View {
+        let sel = app.tab == e.tab
+        return Group {
+            if mini {
+                Image(systemName: sel ? e.iconSelected : e.icon).font(.system(size: 12, weight: .semibold))
+            } else {
+                VStack(spacing: 3) {
+                    glyph(e, sel)
+                    Text(e.title).font(.system(size: 10, weight: .medium))
+                }
+            }
+        }
+        .foregroundColor(sel ? .accentColor : .secondary)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .contentShape(Rectangle())
+    }
+
+    var bar: some View {
+        Group {
+            if blur {
+                Rectangle().fill(.ultraThinMaterial)
+            } else {
+                Color(.systemBackground)
+            }
+        }
+        .ignoresSafeArea(edges: .bottom)
+    }
+
+    var body: some View {
+        HStack(spacing: 0) {
+            ForEach(entries, id: \.title) { e in
+                Button { select(e.tab) } label: { cell(e) }
+                    .buttonStyle(.plain)
+            }
+        }
+        .frame(height: mini ? 24 : 52)
+        .background(bar)
+        .overlay(Divider(), alignment: .top)
+    }
+}
+
+// MARK: - Início
+
+struct HomeView: View {
+    @EnvironmentObject var gh: GitHub
+    @EnvironmentObject var store: Store
+    @State private var showZip = false
+    @State private var recents: [RecentItem] = []
+
+    func loadRecents() {
+        recents = Recents.list().compactMap { (s: String) -> RecentItem? in
+            let p = s.components(separatedBy: "|")
+            guard p.count == 2, let l = Lang(rawValue: p[0]) else { return nil }
+            guard FileManager.default.fileExists(atPath: store.dir(l, p[1]).path) else { return nil }
+            return RecentItem(lang: l, name: p[1])
+        }
+    }
+
+    func recentRow(_ r: RecentItem) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: r.lang.icon).font(.system(size: 20)).frame(width: 28)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(r.name).font(.subheadline.weight(.semibold))
+                Text(r.lang.title).font(.caption).foregroundColor(.secondary)
+            }
+            Spacer()
+            Image(systemName: "chevron.right").font(.caption).foregroundColor(.secondary)
+        }
+        .foregroundColor(.primary)
+        .padding(12)
+        .background(Color(.secondarySystemBackground))
+        .cornerRadius(12)
+    }
+
+    var body: some View {
+        NavigationView {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    if !recents.isEmpty {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Recentes").font(.headline)
+                            ForEach(recents) { r in
+                                NavigationLink(destination: IDEView(lang: r.lang, name: r.name)) { recentRow(r) }
+                            }
+                        }
+                    }
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Projetos").font(.headline)
+                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 12)], spacing: 12) {
+                            ForEach(Lang.allCases) { l in
+                                NavigationLink(destination: ProjectsView(lang: l)) {
+                                    Card(icon: l.icon, title: l.title, sub: l.hint)
+                                }
+                            }
+                        }
+                    }
+                }
+                .padding()
+            }
+            .navigationTitle("CodeLab")
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button { showZip = true } label: { Image(systemName: "square.and.arrow.up") }
+                }
+            }
+            .sheet(isPresented: $showZip) { ZipToGitView().environmentObject(gh) }
+            .onAppear { loadRecents() }
+        }
+        .navigationViewStyle(.stack)
+    }
+}
+
+// MARK: - Perfil
+
+struct ProfileView: View {
+    @EnvironmentObject var gh: GitHub
+    @State private var showLogin = false
+
+    func stat(_ n: Int, _ label: String) -> some View {
+        VStack(spacing: 2) {
+            Text(String(n)).font(.headline)
+            Text(label).font(.caption).foregroundColor(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    var avatar: some View {
+        Group {
+            if let s = gh.avatarURL, let u = URL(string: s) {
+                AsyncImage(url: u) { img in
+                    img.resizable().scaledToFill()
+                } placeholder: {
+                    Color.gray.opacity(0.25)
+                }
+            } else {
+                Image(systemName: "person.crop.circle.fill")
+                    .resizable()
+                    .foregroundColor(Color(.systemGray3))
+            }
+        }
+        .frame(width: 92, height: 92)
+        .clipShape(Circle())
+        .overlay(Circle().stroke(Color.accentColor, lineWidth: 3))
+    }
+
+    var header: some View {
+        VStack(spacing: 8) {
+            avatar
+            if let login = gh.user {
+                Text(gh.displayName ?? login).font(.title2.weight(.bold))
+                Text("@" + login).foregroundColor(.secondary)
+                if let bio = gh.bio, !bio.isEmpty {
+                    Text(bio).font(.footnote).multilineTextAlignment(.center).padding(.horizontal)
+                }
+                HStack {
+                    stat(gh.publicRepos, "repositórios")
+                    stat(gh.followers, "seguidores")
+                    stat(gh.following, "seguindo")
+                }
+                .padding(.top, 6)
+            } else {
+                Text("Você não está conectado").font(.headline)
+                Text("Entre com o GitHub para enviar projetos, importar .zip e usar o git no terminal.")
+                    .font(.footnote)
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal)
+                Button { showLogin = true } label: {
+                    Text("Entrar com GitHub").font(.subheadline.weight(.semibold)).padding(.horizontal, 8)
+                }
+                .buttonStyle(.borderedProminent)
+                .padding(.top, 4)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 8)
+    }
+
+    var body: some View {
+        List {
+            Section { header }
+                .listRowBackground(Color.clear)
+
+            if gh.user != nil && !gh.repos.isEmpty {
+                Section(header: Text("Repositórios recentes")) {
+                    ForEach(gh.repos) { r in
+                        if let u = URL(string: r.url) {
+                            Link(destination: u) {
+                                HStack(spacing: 10) {
+                                    Image(systemName: r.isPrivate ? "lock" : "book.closed").frame(width: 22).foregroundColor(.secondary)
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(r.name).foregroundColor(.primary)
+                                        if let lang = r.language { Text(lang).font(.caption).foregroundColor(.secondary) }
+                                    }
+                                    Spacer()
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            Section {
+                NavigationLink(destination: SettingsView()) {
+                    Label("Configurações", systemImage: "gearshape")
+                }
+            }
+
+            if let login = gh.user {
+                Section {
+                    if let u = URL(string: "https://github.com/" + login) {
+                        Link(destination: u) { Label("Abrir perfil no GitHub", systemImage: "safari") }
+                    }
+                    Button(role: .destructive) { gh.logout() } label: {
+                        Label("Sair da conta", systemImage: "rectangle.portrait.and.arrow.right")
+                    }
+                }
+            }
+
+            Section {
+                Text("CodeLab 1.0")
+                    .font(.footnote)
+                    .foregroundColor(.secondary)
+                    .frame(maxWidth: .infinity)
+            }
+            .listRowBackground(Color.clear)
+        }
+        .listStyle(.insetGrouped)
+        .navigationTitle("Perfil")
+        .navigationBarTitleDisplayMode(.inline)
+        .sheet(isPresented: $showLogin) { GitHubLoginView().environmentObject(gh) }
+        .task { await gh.refreshProfile() }
+        .refreshable { await gh.refreshProfile() }
+    }
+}
+
+// MARK: - Configurações
+
+struct SettingsView: View {
+    @AppStorage("blurEnabled") private var blur = true
+    @AppStorage("hideDockCoding") private var hideDock = false
+    @AppStorage("editorFontSize") private var fontSize = 15.0
+
+    var body: some View {
+        Form {
+            Section(header: Text("Aparência"),
+                    footer: Text("Aplica um efeito de vidro fosco à barra inferior. Desativado, a barra usa um fundo sólido.")) {
+                Toggle("Desfoque da barra inferior", isOn: $blur)
+            }
+            Section(header: Text("Editor"),
+                    footer: Text("Desativado, a barra inferior encolhe para uma faixa fina enquanto você edita código. O tamanho da fonte vale a partir do próximo arquivo aberto.")) {
+                Toggle("Ocultar a barra inferior ao programar", isOn: $hideDock)
+                Stepper(value: $fontSize, in: 11...24, step: 1) {
+                    Text("Tamanho da fonte: " + String(Int(fontSize)))
+                }
+            }
+        }
+        .navigationTitle("Configurações")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}

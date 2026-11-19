@@ -11,7 +11,7 @@ struct CodeEditor: UIViewRepresentable {
     func makeUIView(context: Context) -> UITextView {
         let tv = UITextView()
         tv.delegate = context.coordinator
-        tv.font = UIFont.monospacedSystemFont(ofSize: 15, weight: .regular)
+        tv.font = UIFont.monospacedSystemFont(ofSize: Prefs.editorFontSize, weight: .regular)
         tv.autocapitalizationType = .none
         tv.autocorrectionType = .no
         tv.smartQuotesType = .no
@@ -175,7 +175,7 @@ struct CodeEditor: UIViewRepresentable {
             if tv.markedTextRange != nil { return }
             let storage = tv.textStorage
             let full = NSRange(location: 0, length: storage.length)
-            let font = UIFont.monospacedSystemFont(ofSize: 15, weight: .regular)
+            let font = UIFont.monospacedSystemFont(ofSize: Prefs.editorFontSize, weight: .regular)
             storage.beginEditing()
             storage.setAttributes([.font: font, .foregroundColor: UIColor.label], range: full)
             if storage.length < 60000 {

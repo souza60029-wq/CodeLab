@@ -1,6 +1,14 @@
 import Foundation
 import UIKit
 
+struct GHRepo: Identifiable {
+    let id: Int
+    let name: String
+    let isPrivate: Bool
+    let language: String?
+    let url: String
+}
+
 struct GHError: LocalizedError {
     let msg: String
     var errorDescription: String? { msg }
@@ -24,6 +32,13 @@ final class GitHub: ObservableObject {
     @Published var user: String? = UserDefaults.standard.string(forKey: "gh_user")
     @Published var log: String = ""
     @Published var userCode: String? = nil
+    @Published var avatarURL: String? = UserDefaults.standard.string(forKey: "gh_avatar")
+    @Published var displayName: String? = UserDefaults.standard.string(forKey: "gh_name")
+    @Published var bio: String? = UserDefaults.standard.string(forKey: "gh_bio")
+    @Published var publicRepos: Int = UserDefaults.standard.integer(forKey: "gh_repos")
+    @Published var followers: Int = UserDefaults.standard.integer(forKey: "gh_followers")
+    @Published var following: Int = UserDefaults.standard.integer(forKey: "gh_following")
+    @Published var repos: [GHRepo] = []
     @Published var verifyURL: String = ""
 
     func add(_ s: String) {
@@ -96,6 +111,38 @@ final class GitHub: ObservableObject {
         }
         UserDefaults.standard.set(name, forKey: "gh_user")
         user = name
+        Task { await refreshProfile() }
+    }
+
+    /// Foto, nome e números da conta + repositórios mais recentes.
+    func refreshProfile() async {
+        guard user != nil else { return }
+        let ud = UserDefaults.standard
+        if let r = try? await call("GET", "/user"), r.0 == 200 {
+            let j = GitHub.json(r.1)
+            avatarURL = j["avatar_url"] as? String
+            displayName = j["name"] as? String
+            bio = j["bio"] as? String
+            publicRepos = (j["public_repos"] as? Int) ?? 0
+            followers = (j["followers"] as? Int) ?? 0
+            following = (j["following"] as? Int) ?? 0
+            ud.set(avatarURL, forKey: "gh_avatar")
+            ud.set(displayName, forKey: "gh_name")
+            ud.set(bio, forKey: "gh_bio")
+            ud.set(publicRepos, forKey: "gh_repos")
+            ud.set(followers, forKey: "gh_followers")
+            ud.set(following, forKey: "gh_following")
+        }
+        if let r = try? await call("GET", "/user/repos?sort=updated&per_page=8&affiliation=owner,collaborator"), r.0 == 200,
+           let arr = (try? JSONSerialization.jsonObject(with: r.1)) as? [[String: Any]] {
+            repos = arr.compactMap { (x: [String: Any]) -> GHRepo? in
+                guard let id = x["id"] as? Int, let name = x["name"] as? String else { return nil }
+                return GHRepo(id: id, name: name,
+                              isPrivate: (x["private"] as? Bool) ?? false,
+                              language: x["language"] as? String,
+                              url: (x["html_url"] as? String) ?? "")
+            }
+        }
     }
 
 
@@ -155,7 +202,17 @@ final class GitHub: ObservableObject {
     func logout() {
         UserDefaults.standard.removeObject(forKey: "gh_token")
         UserDefaults.standard.removeObject(forKey: "gh_user")
+        for k in ["gh_avatar", "gh_name", "gh_bio", "gh_repos", "gh_followers", "gh_following"] {
+            UserDefaults.standard.removeObject(forKey: k)
+        }
         user = nil
+        avatarURL = nil
+        displayName = nil
+        bio = nil
+        publicRepos = 0
+        followers = 0
+        following = 0
+        repos = []
     }
 
     // MARK: leitura do repositório

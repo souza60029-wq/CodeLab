@@ -19,53 +19,6 @@ struct Card: View {
     }
 }
 
-struct RootView: View {
-    @StateObject private var gh = GitHub()
-    @StateObject private var store = Store()
-    @State private var showGH = false
-    @State private var showZip = false
-    @State private var showImporter = false
-    @State private var importMsg = ""
-    @State private var showImportMsg = false
-
-    var body: some View {
-        NavigationView {
-            ScrollView {
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 12)], spacing: 12) {
-                    ForEach(Lang.allCases) { l in
-                        NavigationLink(destination: ProjectsView(lang: l)) {
-                            Card(icon: l.icon, title: l.title, sub: l.hint)
-                        }
-                    }
-                    NavigationLink(destination: TerminalView()) {
-                        Card(icon: "terminal", title: "Terminal", sub: "git + comandos")
-                    }
-                }
-                .padding()
-            }
-            .navigationTitle("CodeLab")
-            .sheet(isPresented: $showZip) { ZipToGitView().environmentObject(gh) }
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button { showZip = true } label: { Image(systemName: "square.and.arrow.up") }
-                }
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button(gh.user.map { "@" + $0 } ?? "Entrar no GitHub") { showGH = true }
-                }
-            }
-        }
-        .navigationViewStyle(.stack)
-        .alert("Abrir projeto", isPresented: $showImportMsg) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text(importMsg)
-        }
-        .environmentObject(gh)
-        .environmentObject(store)
-        .sheet(isPresented: $showGH) { GitHubLoginView().environmentObject(gh) }
-    }
-}
-
 struct GitHubLoginView: View {
     @EnvironmentObject var gh: GitHub
     @Environment(\.presentationMode) var pm
