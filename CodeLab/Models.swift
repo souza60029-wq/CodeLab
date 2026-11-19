@@ -48,9 +48,9 @@ final class Store: ObservableObject {
         return ((try? FileManager.default.contentsOfDirectory(atPath: p)) ?? []).sorted()
     }
 
-    func create(_ l: Lang, _ n: String, kotlin: Bool = false, minSdk: Int = 24) {
+    func create(_ l: Lang, _ n: String, kotlin: Bool = false, minSdk: Int = 24, sample: Int = 0) {
         let d = dir(l, n)
-        for (p, c) in Templates.files(l, n, kotlin: kotlin, minSdk: minSdk) {
+        for (p, c) in Templates.files(l, n, kotlin: kotlin, minSdk: minSdk, sample: sample) {
             let u = d.appendingPathComponent(p)
             try? FileManager.default.createDirectory(at: u.deletingLastPathComponent(), withIntermediateDirectories: true)
             try? c.write(to: u, atomically: true, encoding: .utf8)

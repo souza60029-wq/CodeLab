@@ -20,6 +20,18 @@ O iOS não permite compilar programas dentro do próprio aparelho. O CodeLab res
 
 Feito para funcionar bem em telas pequenas, a partir do iPhone 6s com iOS 15.
 
+## Diferenciais
+
+- **Compila Android e iOS sem computador.** O CodeLab envia o projeto, o GitHub Actions monta o APK ou o IPA e o app baixa o resultado de volta. Em seguida, o botão **Instalar / compartilhar** abre o arquivo direto no TrollStore, em Arquivos ou por AirDrop.
+- **Roda C/C++ e Java no próprio aparelho, offline.** Sem servidor, sem conta e sem espera; ideal para estudar lógica de programação.
+- **Importar .zip em um único commit.** Um projeto inteiro sobe de uma vez, sem poluir o histórico com um commit por arquivo.
+- **Navegador de arquivos com dois modos.** Ícones, como no app Arquivos do iOS, ou árvore, como no Android Studio, com menu de contexto completo.
+- **Busca em todo o projeto** e **exportação em .zip** para backup ou envio.
+- **Modelos prontos** (FizzBuzz, números primos, Fibonacci…) que rodam na hora, para começar a praticar.
+- **Login oficial do GitHub** dentro do app, com verificação em 2 etapas.
+- **Interface pensada para tela pequena.** A barra inferior encolhe ou some enquanto você programa.
+- **Tudo em um só lugar:** editor, terminal com git, perfil e build na nuvem.
+
 ## Recursos
 
 ### Editor
@@ -27,6 +39,7 @@ Feito para funcionar bem em telas pequenas, a partir do iPhone 6s com iOS 15.
 - Corretor que aponta chaves e parênteses sem par, `;` ou `:` faltando, com botão **Corrigir**.
 - Tamanho da fonte ajustável.
 - Salvamento automático ao trocar de arquivo ou sair.
+- Busca em todos os arquivos do projeto e exportação do projeto em .zip.
 
 ### Arquivos
 - Dois modos de navegação, alternados por um botão:
@@ -98,6 +111,7 @@ CodeLab/
 ├── CodeEditor.swift     editor com realce de sintaxe
 ├── Linter.swift         corretor de erros
 ├── Interp.swift         interpretador de C/C++ e Java
+├── Extras.swift         busca, exportar .zip e compartilhar
 ├── Terminal.swift       terminal e comandos
 ├── RealShell.swift      ponte com o ios_system
 ├── GitHub.swift         API do GitHub, login e envio

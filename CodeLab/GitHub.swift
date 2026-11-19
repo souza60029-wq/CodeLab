@@ -39,6 +39,7 @@ final class GitHub: ObservableObject {
     @Published var followers: Int = UserDefaults.standard.integer(forKey: "gh_followers")
     @Published var following: Int = UserDefaults.standard.integer(forKey: "gh_following")
     @Published var repos: [GHRepo] = []
+    @Published var lastBuilt: URL? = nil
     @Published var verifyURL: String = ""
 
     func add(_ s: String) {
@@ -581,6 +582,7 @@ final class GitHub: ObservableObject {
             return (GitHub.json(d)["workflow_runs"] as? [[String: Any]])?.first
         }
 
+        lastBuilt = nil
         let prev = try await latest()
         let prevId = prev?["id"] as? Int
 
@@ -643,7 +645,22 @@ final class GitHub: ObservableObject {
                     if let zip = try? await authedFetch("/repos/\(slug)/actions/artifacts/\(aid)/zip") {
                         let fname = slug.replacingOccurrences(of: "/", with: "-") + "-" + nm + "-" + String(runId) + ".zip"
                         let dest = dl.appendingPathComponent(fname)
-                        if (try? zip.write(to: dest)) != nil { saved.append(fname) }
+                        if (try? zip.write(to: dest)) != nil {
+                            saved.append(fname)
+                            let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("art-" + UUID().uuidString)
+                            if (try? Zip.extract(dest, to: tmp)) != nil {
+                                for rel in Store.files(in: tmp) where rel.hasSuffix(".ipa") || rel.hasSuffix(".apk") {
+                                    let base = slug.replacingOccurrences(of: "/", with: "-") + "-" + String(runId) + "-" + (rel as NSString).lastPathComponent
+                                    let out = dl.appendingPathComponent(base)
+                                    try? FileManager.default.removeItem(at: out)
+                                    if (try? FileManager.default.copyItem(at: tmp.appendingPathComponent(rel), to: out)) != nil {
+                                        saved.append(base)
+                                        lastBuilt = out
+                                    }
+                                }
+                            }
+                            try? FileManager.default.removeItem(at: tmp)
+                        }
                     }
                 }
             }

@@ -1,18 +1,18 @@
 import Foundation
 
 enum Templates {
-    static func files(_ l: Lang, _ name: String, kotlin: Bool = false, minSdk: Int = 24) -> [String: String] {
+    static func files(_ l: Lang, _ name: String, kotlin: Bool = false, minSdk: Int = 24, sample: Int = 0) -> [String: String] {
         let bundleSuffix = name.lowercased()
             .replacingOccurrences(of: "-", with: "")
             .replacingOccurrences(of: "_", with: "")
         switch l {
         case .cpp:
             return [
-                "main.cpp": "#include <iostream>\n\nint main() {\n    std::cout << \"Ola, mundo!\" << std::endl;\n    return 0;\n}\n"
+                "main.cpp": cppSample(sample)
             ]
         case .java:
             return [
-                "Main.java": "public class Main {\n    public static void main(String[] args) {\n        System.out.println(\"Ola, mundo!\");\n    }\n}\n"
+                "Main.java": javaSample(sample)
             ]
         case .godot:
             return [
@@ -31,6 +31,139 @@ enum Templates {
         }
     }
 
+
+
+    static let sampleNames = ["Olá, mundo", "FizzBuzz", "Números primos", "Fibonacci"]
+
+    static func cppSample(_ i: Int) -> String {
+        switch i {
+        case 1: return #"""
+#include <iostream>
+using namespace std;
+
+int main() {
+    for (int i = 1; i <= 20; i++) {
+        if (i % 15 == 0) cout << "FizzBuzz" << endl;
+        else if (i % 3 == 0) cout << "Fizz" << endl;
+        else if (i % 5 == 0) cout << "Buzz" << endl;
+        else cout << i << endl;
+    }
+    return 0;
+}
+
+"""#
+        case 2: return #"""
+#include <iostream>
+using namespace std;
+
+bool isPrime(int n) {
+    if (n < 2) return false;
+    for (int d = 2; d * d <= n; d++) {
+        if (n % d == 0) return false;
+    }
+    return true;
+}
+
+int main() {
+    for (int n = 1; n <= 50; n++) {
+        if (isPrime(n)) cout << n << " ";
+    }
+    cout << endl;
+    return 0;
+}
+
+"""#
+        case 3: return #"""
+#include <iostream>
+using namespace std;
+
+int fib(int n) {
+    if (n < 2) return n;
+    return fib(n - 1) + fib(n - 2);
+}
+
+int main() {
+    for (int i = 0; i < 15; i++) {
+        cout << fib(i) << " ";
+    }
+    cout << endl;
+    return 0;
+}
+
+"""#
+        default: return #"""
+#include <iostream>
+using namespace std;
+
+int main() {
+    cout << "Ola, mundo!" << endl;
+    return 0;
+}
+
+"""#
+        }
+    }
+
+    static func javaSample(_ i: Int) -> String {
+        switch i {
+        case 1: return #"""
+public class Main {
+    public static void main(String[] args) {
+        for (int i = 1; i <= 20; i++) {
+            if (i % 15 == 0) System.out.println("FizzBuzz");
+            else if (i % 3 == 0) System.out.println("Fizz");
+            else if (i % 5 == 0) System.out.println("Buzz");
+            else System.out.println(i);
+        }
+    }
+}
+
+"""#
+        case 2: return #"""
+public class Main {
+    static boolean isPrime(int n) {
+        if (n < 2) return false;
+        for (int d = 2; d * d <= n; d++) {
+            if (n % d == 0) return false;
+        }
+        return true;
+    }
+
+    public static void main(String[] args) {
+        for (int n = 1; n <= 50; n++) {
+            if (isPrime(n)) System.out.print(n + " ");
+        }
+        System.out.println();
+    }
+}
+
+"""#
+        case 3: return #"""
+public class Main {
+    static int fib(int n) {
+        if (n < 2) return n;
+        return fib(n - 1) + fib(n - 2);
+    }
+
+    public static void main(String[] args) {
+        for (int i = 0; i < 15; i++) {
+            System.out.print(fib(i) + " ");
+        }
+        System.out.println();
+    }
+}
+
+"""#
+        default: return #"""
+public class Main {
+    public static void main(String[] args) {
+        System.out.println("Ola, mundo!");
+    }
+}
+
+"""#
+        }
+    }
 
     static func android(_ name: String, kotlin: Bool, minSdk: Int) -> [String: String] {
         var f: [String: String] = [:]

@@ -307,6 +307,8 @@ struct IDEView: View {
     @State private var showTools = false
     @State private var showOut = false
     @State private var output = ""
+    @State private var showSearch = false
+    @State private var shareItem: ShareItem? = nil
 
     var dir: URL { store.dir(lang, name) }
     var ext: String { current?.pathExtension.lowercased() ?? "" }
@@ -334,6 +336,19 @@ struct IDEView: View {
         }
         if let f = all.first(where: { !$0.hasPrefix(".") }) { return dir.appendingPathComponent(f) }
         return nil
+    }
+
+    func exportZip() {
+        save()
+        let tmp = FileManager.default.temporaryDirectory.appendingPathComponent(name + ".zip")
+        try? FileManager.default.removeItem(at: tmp)
+        do {
+            try ZipWriter.create(dir: dir, to: tmp, prefix: name)
+            shareItem = ShareItem(url: tmp)
+        } catch {
+            output = "Erro ao exportar: " + error.localizedDescription
+            showOut = true
+        }
     }
 
     func runLocal() {
@@ -377,6 +392,8 @@ struct IDEView: View {
                 Button { save(); showFiles = true } label: { Image(systemName: "folder") }
                 Menu {
                     Button("Salvar") { save() }
+                    Button("Buscar no projeto") { save(); showSearch = true }
+                    Button("Exportar projeto (.zip)") { exportZip() }
                     Button("Corrigir erros") { text = Linter.fix(text, issues, ext: ext) }
                     Button("GitHub e ferramentas") { save(); showTools = true }
                 } label: { Image(systemName: "ellipsis.circle") }
@@ -412,6 +429,10 @@ struct IDEView: View {
                 }
             )
         }
+        .sheet(isPresented: $showSearch) {
+            ProjectSearchView(dir: dir) { u in open(u) }
+        }
+        .sheet(item: $shareItem) { item in ShareSheet(items: [item.url]) }
         .sheet(isPresented: $showOut) {
             NavigationView {
                 ScrollView {

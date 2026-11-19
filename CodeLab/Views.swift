@@ -100,6 +100,7 @@ struct ProjectsView: View {
     @State private var showImportMsg = false
     @State private var kotlin = false
     @State private var minSdk = 24
+    @State private var sample = 0
 
     static let sdks: [(Int, String)] = [(21, "5.0"), (23, "6.0"), (24, "7.0"), (26, "8.0"), (28, "9"),
                                         (29, "10"), (30, "11"), (31, "12"), (33, "13"), (34, "14")]
@@ -119,13 +120,20 @@ struct ProjectsView: View {
                         }
                     }
                 }
+                if lang == .cpp || lang == .java {
+                    Picker("Modelo", selection: $sample) {
+                        ForEach(0..<Templates.sampleNames.count, id: \.self) { i in
+                            Text(Templates.sampleNames[i]).tag(i)
+                        }
+                    }
+                }
                 HStack {
                     TextField("nome (sem espaços)", text: $newName)
                         .textInputAutocapitalization(.never)
                         .disableAutocorrection(true)
                     Button("Criar") {
                         let n = Store.cleanName(newName)
-                        if !n.isEmpty { store.create(lang, n, kotlin: kotlin, minSdk: minSdk); newName = ""; items = store.projects(lang) }
+                        if !n.isEmpty { store.create(lang, n, kotlin: kotlin, minSdk: minSdk, sample: sample); newName = ""; items = store.projects(lang) }
                     }
                 }
                 Button("Abrir projeto existente (.zip ou pasta)") { showImporter = true }
@@ -174,6 +182,7 @@ struct ProjectView: View {
     @EnvironmentObject var store: Store
     @EnvironmentObject var gh: GitHub
     @State private var refresh = UUID()
+    @State private var shareItem: ShareItem? = nil
     @State private var repo = ""
     @State private var busy = false
     @State private var showLog = false
@@ -247,11 +256,19 @@ struct ProjectView: View {
                 .disabled(repo.isEmpty || busy)
                 }
             }
+            if let f = gh.lastBuilt {
+                Section(header: Text("Último build"), footer: Text("Toque para abrir no TrollStore, salvar em Arquivos ou enviar por AirDrop.")) {
+                    Button { shareItem = ShareItem(url: f) } label: {
+                        Label("Instalar / compartilhar " + f.lastPathComponent, systemImage: "square.and.arrow.up")
+                    }
+                }
+            }
             Section(header: Text("Terminal")) {
                 NavigationLink("Abrir terminal nesta pasta", destination: TerminalView(start: dir))
             }
         }
         .navigationTitle("Ferramentas")
+        .sheet(item: $shareItem) { item in ShareSheet(items: [item.url]) }
         .onAppear {
             let saved = Repo.load(dir).remote
             repo = saved.isEmpty ? (UserDefaults.standard.string(forKey: repoKey) ?? name) : saved
