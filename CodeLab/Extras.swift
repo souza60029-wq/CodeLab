@@ -107,7 +107,7 @@ struct SearchHit: Identifiable {
 
 struct ProjectSearchView: View {
     let dir: URL
-    let onOpen: (URL) -> Void
+    let onOpen: (URL, Int) -> Void
     @Environment(\.presentationMode) var pm
     @State private var query = ""
     @State private var hits: [SearchHit] = []
@@ -149,7 +149,7 @@ struct ProjectSearchView: View {
                 }
                 ForEach(hits) { h in
                     Button {
-                        onOpen(dir.appendingPathComponent(h.file))
+                        onOpen(dir.appendingPathComponent(h.file), h.line)
                         pm.wrappedValue.dismiss()
                     } label: {
                         VStack(alignment: .leading, spacing: 2) {

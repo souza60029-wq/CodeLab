@@ -38,7 +38,12 @@ Feito para funcionar bem em telas pequenas, a partir do iPhone 6s com iOS 15.
 - Realce de sintaxe para C/C++, Java, Kotlin, GDScript, Swift, Gradle, YAML e outros.
 - Corretor que aponta chaves e parênteses sem par, `;` ou `:` faltando, com botão **Corrigir**.
 - Tamanho da fonte ajustável.
-- Salvamento automático ao trocar de arquivo ou sair.
+- **Digitação assistida**: fecha parênteses, colchetes, chaves e aspas sozinho; mantém a indentação ao dar Enter; abre o bloco entre `{ }`; recua o `}` automaticamente; apaga pares vazios de uma vez.
+- **Barra acima do teclado** com desfazer, refazer, setas para mover o cursor, Tab e Shift+Tab (também em várias linhas), comentar/descomentar, duplicar, apagar e mover linhas, além dos símbolos de programação.
+- **Abas de arquivos abertos** para alternar rápido entre arquivos.
+- **Ir direto ao erro**: tocar em um problema do corretor ou em um resultado da busca leva o cursor para a linha.
+- **Posição do cursor** (linha e coluna) e **salvamento automático** com indicador.
+- Salvamento ao trocar de arquivo ou sair.
 - Busca em todos os arquivos do projeto e exportação do projeto em .zip.
 
 ### Arquivos

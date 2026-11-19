@@ -4,6 +4,12 @@ import UIKit
 // MARK: - Preferências
 
 enum Prefs {
+    static var autoPairs: Bool { UserDefaults.standard.object(forKey: "autoPairs") as? Bool ?? true }
+    static var autoIndent: Bool { UserDefaults.standard.object(forKey: "autoIndent") as? Bool ?? true }
+    static var tabWidth: Int {
+        let v = UserDefaults.standard.integer(forKey: "tabWidth")
+        return v == 0 ? 4 : v
+    }
     static var editorFontSize: CGFloat {
         let v = UserDefaults.standard.double(forKey: "editorFontSize")
         return v < 8 ? 15 : CGFloat(v)
@@ -375,6 +381,9 @@ struct SettingsView: View {
     @AppStorage("blurEnabled") private var blur = true
     @AppStorage("hideDockCoding") private var hideDock = false
     @AppStorage("editorFontSize") private var fontSize = 15.0
+    @AppStorage("autoPairs") private var autoPairs = true
+    @AppStorage("autoIndent") private var autoIndent = true
+    @AppStorage("tabWidth") private var tabWidth = 4
 
     var body: some View {
         Form {
@@ -388,6 +397,17 @@ struct SettingsView: View {
                 Stepper(value: $fontSize, in: 11...24, step: 1) {
                     Text("Tamanho da fonte: " + String(Int(fontSize)))
                 }
+            }
+            Section(header: Text("Ajuda ao digitar"),
+                    footer: Text("Fecha ( [ { \" e ' sozinho, mantém a indentação ao dar Enter e recua o } automaticamente.")) {
+                Toggle("Fechar parênteses e aspas", isOn: $autoPairs)
+                Toggle("Indentação automática", isOn: $autoIndent)
+                Picker("Largura do Tab", selection: $tabWidth) {
+                    Text("2").tag(2)
+                    Text("4").tag(4)
+                    Text("8").tag(8)
+                }
+                .pickerStyle(.segmented)
             }
         }
         .navigationTitle("Configurações")

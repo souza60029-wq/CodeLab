@@ -302,6 +302,7 @@ struct IDEView: View {
     @EnvironmentObject var store: Store
     @EnvironmentObject var app: AppState
     @State private var current: URL? = nil
+    @State private var openFiles: [URL] = []
     @State private var text = ""
     @State private var showFiles = false
     @State private var showTools = false
@@ -309,6 +310,11 @@ struct IDEView: View {
     @State private var output = ""
     @State private var showSearch = false
     @State private var shareItem: ShareItem? = nil
+    @State private var jump: JumpRequest? = nil
+    @State private var line = 1
+    @State private var col = 1
+    @State private var dirty = false
+    @State private var saveTask: Task<Void, Never>? = nil
 
     var dir: URL { store.dir(lang, name) }
     var ext: String { current?.pathExtension.lowercased() ?? "" }
@@ -320,12 +326,34 @@ struct IDEView: View {
         if let c = current, FileManager.default.fileExists(atPath: c.path) {
             try? text.write(to: c, atomically: true, encoding: .utf8)
         }
+        dirty = false
     }
 
-    func open(_ u: URL) {
-        save()
-        current = u
-        text = read(u)
+    func scheduleSave() {
+        saveTask?.cancel()
+        saveTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 1_200_000_000)
+            if !Task.isCancelled { save() }
+        }
+    }
+
+    func open(_ u: URL, line l: Int? = nil) {
+        if current?.path != u.path {
+            save()
+            current = u
+            text = read(u)
+            dirty = false
+        }
+        if !openFiles.contains(where: { $0.path == u.path }) { openFiles.append(u) }
+        if let l = l { jump = JumpRequest(line: l) }
+    }
+
+    func close(_ u: URL) {
+        if current?.path == u.path { save() }
+        openFiles.removeAll { $0.path == u.path }
+        if current?.path == u.path {
+            if let n = openFiles.last { current = n; text = read(n) } else { current = nil; text = "" }
+        }
     }
 
     func defaultFile() -> URL? {
@@ -362,16 +390,57 @@ struct IDEView: View {
         showOut = true
     }
 
+    var tabStrip: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) {
+                ForEach(openFiles, id: \.path) { f in
+                    HStack(spacing: 6) {
+                        Text(f.lastPathComponent).font(.footnote).lineLimit(1)
+                        Button { close(f) } label: {
+                            Image(systemName: "xmark").font(.system(size: 10, weight: .bold))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(f.path == current?.path ? Color.accentColor.opacity(0.18) : Color(.secondarySystemBackground))
+                    .cornerRadius(8)
+                    .onTapGesture { open(f) }
+                }
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
+        }
+    }
+
+    var statusBar: some View {
+        HStack {
+            Text("Ln " + String(line) + ", Col " + String(col))
+            Spacer()
+            Text(dirty ? "Editando…" : "Salvo ✓")
+        }
+        .font(.caption)
+        .foregroundColor(.secondary)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 3)
+    }
+
     var body: some View {
         VStack(spacing: 0) {
+            if openFiles.count > 1 { tabStrip }
             if current != nil {
-                CodeEditor(text: $text, ext: ext).id(current)
+                CodeEditor(text: $text, ext: ext,
+                           onCursor: { l, c in line = l; col = c },
+                           jump: jump,
+                           onJumped: { jump = nil })
+                    .id(current)
                 Divider()
-                if issues.isEmpty {
-                    Text("✓ nenhum problema encontrado").font(.footnote).padding(6)
-                } else {
+                statusBar
+                if !issues.isEmpty {
                     List(issues) { i in
-                        Text("linha \(i.line): \(i.msg)").font(.footnote)
+                        Button { jump = JumpRequest(line: i.line) } label: {
+                            Text("linha \(i.line): \(i.msg)").font(.footnote).foregroundColor(.primary)
+                        }
                     }
                     .frame(height: 110)
                 }
@@ -402,13 +471,16 @@ struct IDEView: View {
         .background(
             NavigationLink(destination: ProjectView(lang: lang, name: name), isActive: $showTools) { EmptyView() }
         )
+        .onChange(of: text) { _ in
+            if current != nil {
+                dirty = true
+                scheduleSave()
+            }
+        }
         .onAppear {
             app.coding = true
             Recents.add(lang, name)
-            if current == nil, let f = defaultFile() {
-                current = f
-                text = read(f)
-            }
+            if current == nil, let f = defaultFile() { open(f) }
         }
         .onDisappear { save(); app.coding = false }
         .sheet(isPresented: $showFiles) {
@@ -417,20 +489,26 @@ struct IDEView: View {
                 current: current,
                 onOpen: { u in open(u) },
                 onRemoved: { u in
-                    if let c = current, c.path == u.path || c.path.hasPrefix(u.path + "/") { current = nil; text = "" }
+                    openFiles.removeAll { $0.path == u.path || $0.path.hasPrefix(u.path + "/") }
+                    if let c = current, c.path == u.path || c.path.hasPrefix(u.path + "/") {
+                        if let n = openFiles.last { current = n; text = read(n) } else { current = nil; text = "" }
+                    }
                 },
                 onRenamed: { old, new in
-                    if let c = current {
-                        if c.path == old.path { current = new }
-                        else if c.path.hasPrefix(old.path + "/") {
-                            current = URL(fileURLWithPath: new.path + String(c.path.dropFirst(old.path.count)))
+                    func fix(_ x: URL) -> URL {
+                        if x.path == old.path { return new }
+                        if x.path.hasPrefix(old.path + "/") {
+                            return URL(fileURLWithPath: new.path + String(x.path.dropFirst(old.path.count)))
                         }
+                        return x
                     }
+                    openFiles = openFiles.map(fix)
+                    if let c = current { current = fix(c) }
                 }
             )
         }
         .sheet(isPresented: $showSearch) {
-            ProjectSearchView(dir: dir) { u in open(u) }
+            ProjectSearchView(dir: dir) { u, l in open(u, line: l) }
         }
         .sheet(item: $shareItem) { item in ShareSheet(items: [item.url]) }
         .sheet(isPresented: $showOut) {
