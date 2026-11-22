@@ -5,7 +5,7 @@ import UIKit
 
 enum Prefs {
     static var fluid: Bool { UserDefaults.standard.object(forKey: "fluidAnimations") as? Bool ?? true }
-    static var terminalTips: Bool { UserDefaults.standard.object(forKey: "terminalTips") as? Bool ?? true }
+    static var terminalTips: Bool { UserDefaults.standard.object(forKey: "terminalTips") as? Bool ?? false }
     static var autoPairs: Bool { UserDefaults.standard.object(forKey: "autoPairs") as? Bool ?? true }
     static var autoIndent: Bool { UserDefaults.standard.object(forKey: "autoIndent") as? Bool ?? true }
     static var tabWidth: Int {
@@ -160,7 +160,9 @@ struct DockView: View {
     @EnvironmentObject var app: AppState
     @EnvironmentObject var gh: GitHub
     @AppStorage("blurEnabled") private var blur = true
-    @Namespace private var pill
+    @State private var pillL: CGFloat = 0
+    @State private var pillR: CGFloat = 0
+    @State private var lastIndex = 0
 
     struct Entry {
         let tab: AppState.Tab
@@ -176,9 +178,33 @@ struct DockView: View {
         Entry(tab: .profile, title: "Perfil", icon: "person.crop.circle", iconSelected: "person.crop.circle.fill")
     ]
 
+    let inset: CGFloat = 10
+
     func select(_ t: AppState.Tab) {
         if app.tab != t { UIImpactFeedbackGenerator(style: .light).impactOccurred() }
         app.select(t)
+    }
+
+    /// A bolinha é "líquida": a borda da frente corre rápido e a de trás vem devagar,
+    /// então ela estica no caminho, fica borrada enquanto estica e depois se junta de novo.
+    func place(_ idx: Int, width: CGFloat, animated: Bool) {
+        let cw = width / CGFloat(entries.count)
+        let tl = CGFloat(idx) * cw + inset
+        let tr = CGFloat(idx + 1) * cw - inset
+        if !animated || !Prefs.fluid {
+            pillL = tl
+            pillR = tr
+            return
+        }
+        let fast = Animation.spring(response: 0.26, dampingFraction: 0.72)
+        let slow = Animation.spring(response: 0.52, dampingFraction: 0.8)
+        if idx > lastIndex {
+            withAnimation(fast) { pillR = tr }
+            withAnimation(slow.delay(0.03)) { pillL = tl }
+        } else {
+            withAnimation(fast) { pillL = tl }
+            withAnimation(slow.delay(0.03)) { pillR = tr }
+        }
     }
 
     func glyph(_ e: Entry, _ sel: Bool) -> some View {
@@ -212,18 +238,6 @@ struct DockView: View {
         }
         .foregroundColor(sel ? .accentColor : .secondary)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(
-            ZStack {
-                if sel && !mini && Prefs.fluid {
-                    Capsule()
-                        .fill(Color.accentColor.opacity(0.13))
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 4)
-                        .matchedGeometryEffect(id: "pill", in: pill)
-                        .scaleEffect(x: 1 + 0.4 * abs(sin(app.blurPhase * .pi)), y: 1)
-                }
-            }
-        )
         .contentShape(Rectangle())
     }
 
@@ -239,10 +253,32 @@ struct DockView: View {
     }
 
     var body: some View {
-        HStack(spacing: 0) {
-            ForEach(entries, id: \.title) { e in
-                Button { select(e.tab) } label: { cell(e) }
-                    .buttonStyle(PressableStyle())
+        GeometryReader { g in
+            let cw = g.size.width / CGFloat(entries.count)
+            let stretch = max(0, (pillR - pillL) - (cw - 2 * inset))
+            ZStack(alignment: .leading) {
+                if !mini {
+                    Capsule()
+                        .fill(Color.accentColor.opacity(0.14))
+                        .frame(width: max(8, pillR - pillL), height: 40)
+                        .scaleEffect(x: 1, y: 1 - min(0.14, stretch / 160))
+                        .blur(radius: min(3.5, stretch / 16))
+                        .offset(x: pillL)
+                }
+                HStack(spacing: 0) {
+                    ForEach(entries, id: \.title) { e in
+                        Button { select(e.tab) } label: { cell(e) }
+                            .buttonStyle(PressableStyle())
+                    }
+                }
+            }
+            .onAppear {
+                lastIndex = app.tab.rawValue
+                place(lastIndex, width: g.size.width, animated: false)
+            }
+            .onChange(of: app.tab) { t in
+                place(t.rawValue, width: g.size.width, animated: true)
+                lastIndex = t.rawValue
             }
         }
         .frame(height: mini ? 24 : 52)
@@ -486,7 +522,7 @@ struct SettingsView: View {
     @AppStorage("autoIndent") private var autoIndent = true
     @AppStorage("tabWidth") private var tabWidth = 4
     @AppStorage("fluidAnimations") private var fluid = true
-    @AppStorage("terminalTips") private var tips = true
+    @AppStorage("terminalTips") private var tips = false
 
     var body: some View {
         Form {
@@ -517,7 +553,7 @@ struct SettingsView: View {
                 Toggle("Animações fluidas", isOn: $fluid)
             }
             Section(header: Text("Terminal"),
-                    footer: Text("As sugestões de comandos e de arquivos aparecem enquanto você digita. A dica abaixo aparece só com o campo vazio.")) {
+                    footer: Text("As sugestões aparecem enquanto você digita: o texto fica sublinhado de amarelo e uma lâmpada surge no canto; toque nele para ver. A dica de próximo passo é uma faixa opcional no topo do terminal.")) {
                 Toggle("Dica do próximo passo", isOn: $tips)
             }
         }

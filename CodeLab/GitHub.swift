@@ -7,6 +7,8 @@ struct GHRepo: Identifiable {
     let isPrivate: Bool
     let language: String?
     let url: String
+    var fullName: String = ""
+    var defaultBranch: String = "main"
 }
 
 struct GHError: LocalizedError {
@@ -40,6 +42,7 @@ final class GitHub: ObservableObject {
     @Published var following: Int = UserDefaults.standard.integer(forKey: "gh_following")
     @Published var repos: [GHRepo] = []
     @Published var lastBuilt: URL? = nil
+    @Published var allRepos: [GHRepo] = []
     @Published var verifyURL: String = ""
 
     func add(_ s: String) {
@@ -113,6 +116,38 @@ final class GitHub: ObservableObject {
         UserDefaults.standard.set(name, forKey: "gh_user")
         user = name
         Task { await refreshProfile() }
+    }
+
+
+    /// Todos os repositórios da conta (até 300), do mais recente para o mais antigo.
+    func loadAllRepos() async {
+        guard user != nil else { return }
+        var acc: [GHRepo] = []
+        for page in 1...3 {
+            guard let r = try? await call("GET", "/user/repos?per_page=100&sort=updated&page=" + String(page) + "&affiliation=owner,collaborator,organization_member"),
+                  r.0 == 200,
+                  let arr = (try? JSONSerialization.jsonObject(with: r.1)) as? [[String: Any]] else { break }
+            for x in arr {
+                guard let id = x["id"] as? Int, let name = x["name"] as? String else { continue }
+                acc.append(GHRepo(id: id, name: name,
+                                  isPrivate: (x["private"] as? Bool) ?? false,
+                                  language: x["language"] as? String,
+                                  url: (x["html_url"] as? String) ?? "",
+                                  fullName: (x["full_name"] as? String) ?? name,
+                                  defaultBranch: (x["default_branch"] as? String) ?? "main"))
+            }
+            if arr.count < 100 { break }
+        }
+        if !acc.isEmpty { allRepos = acc }
+    }
+
+    /// Branches de um repositório ("dono/nome"). Vazio se o repositório não existir.
+    func branches(of slug: String) async -> [String] {
+        guard !slug.isEmpty,
+              let r = try? await call("GET", "/repos/" + slug + "/branches?per_page=100"),
+              r.0 == 200,
+              let arr = (try? JSONSerialization.jsonObject(with: r.1)) as? [[String: Any]] else { return [] }
+        return arr.compactMap { (x: [String: Any]) -> String? in x["name"] as? String }
     }
 
     /// Foto, nome e números da conta + repositórios mais recentes.

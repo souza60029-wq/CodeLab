@@ -170,3 +170,95 @@ struct ProjectSearchView: View {
         }
     }
 }
+
+// MARK: - Verificar projeto (local, antes de gastar build no GitHub)
+
+struct CheckItem: Identifiable {
+    let id = UUID()
+    let level: Int   // 0 ok, 1 aviso, 2 erro
+    let text: String
+    var line: String { (level == 0 ? "✓ " : (level == 1 ? "⚠️ " : "✗ ")) + text }
+}
+
+enum ProjectCheck {
+    static func run(_ lang: Lang, _ dir: URL) -> [CheckItem] {
+        var r: [CheckItem] = []
+        let fm = FileManager.default
+        func has(_ p: String) -> Bool { fm.fileExists(atPath: dir.appendingPathComponent(p).path) }
+        func read(_ p: String) -> String? { try? String(contentsOf: dir.appendingPathComponent(p)) }
+        func ok(_ t: String) { r.append(CheckItem(level: 0, text: t)) }
+        func warn(_ t: String) { r.append(CheckItem(level: 1, text: t)) }
+        func bad(_ t: String) { r.append(CheckItem(level: 2, text: t)) }
+
+        let all = Store.files(in: dir)
+        let hasWorkflow = (read(".github/workflows/build.yml") ?? "").contains("workflow_dispatch")
+
+        switch lang {
+        case .android:
+            for f in ["settings.gradle", "build.gradle", "app/build.gradle", "app/src/main/AndroidManifest.xml"] {
+                if has(f) { ok(f + " encontrado") } else if has(f + ".kts") { ok(f + ".kts encontrado") } else { bad(f + " não existe") }
+            }
+            if let m = read("app/src/main/AndroidManifest.xml"), let d = m.data(using: .utf8) {
+                let p = XMLParser(data: d)
+                if p.parse() { ok("AndroidManifest.xml é um XML válido") }
+                else { bad("AndroidManifest.xml com erro: " + (p.parserError?.localizedDescription ?? "XML inválido")) }
+            }
+            if let g = read("settings.gradle"), !g.contains(":app") { bad("settings.gradle não inclui o módulo ':app'") }
+            if let g = read("app/build.gradle"), !g.contains("namespace") { warn("app/build.gradle sem 'namespace'") }
+            if !all.contains(where: { $0.hasSuffix("MainActivity.java") || $0.hasSuffix("MainActivity.kt") }) { warn("nenhuma MainActivity encontrada") }
+        case .ios:
+            if has("project.yml") { ok("project.yml encontrado") } else { bad("project.yml não existe (o build usa XcodeGen)") }
+            let swift = all.filter { $0.hasSuffix(".swift") }
+            if swift.isEmpty { bad("nenhum arquivo .swift") }
+            else if !swift.contains(where: { (read($0) ?? "").contains("@main") }) { warn("nenhum arquivo tem @main") }
+            else { ok("ponto de entrada @main encontrado") }
+        case .godot:
+            if let g = read("project.godot") {
+                ok("project.godot encontrado")
+                if !g.contains("config_version") { warn("project.godot sem config_version") }
+            } else { bad("project.godot não existe") }
+            if !all.contains(where: { $0.hasSuffix(".gd") }) { warn("nenhum script .gd") }
+        case .cpp:
+            let src = all.filter { ["c", "cpp", "cc", "cxx"].contains(($0 as NSString).pathExtension.lowercased()) }
+            if src.isEmpty { bad("nenhum arquivo .c/.cpp") }
+            else if !src.contains(where: { (read($0) ?? "").contains("main") }) { warn("não achei a função main") }
+            else { ok("função main encontrada") }
+        case .java:
+            let src = all.filter { $0.hasSuffix(".java") }
+            if src.isEmpty { bad("nenhum arquivo .java") }
+            else if !src.contains(where: { (read($0) ?? "").contains("static void main") }) { warn("não achei public static void main") }
+            else { ok("método main encontrado") }
+        }
+
+        if lang == .android || lang == .ios || lang == .godot {
+            if hasWorkflow { ok("workflow de build encontrado (workflow_dispatch)") }
+            else { warn(".github/workflows/build.yml ausente ou sem 'workflow_dispatch'") }
+        }
+
+        let exts: Set<String> = ["java", "kt", "swift", "gd", "c", "cpp", "cc", "h", "hpp"]
+        var problems = 0
+        var files = 0
+        for f in all where exts.contains((f as NSString).pathExtension.lowercased()) {
+            guard let text = read(f) else { continue }
+            files += 1
+            for i in Linter.check(text, ext: (f as NSString).pathExtension.lowercased()).prefix(3) {
+                problems += 1
+                if problems <= 8 { warn(f + ":" + String(i.line) + " " + i.msg) }
+            }
+        }
+        if files > 0 && problems == 0 { ok(String(files) + " arquivo(s) de código sem problemas óbvios") }
+        if problems > 8 { warn("… e mais " + String(problems - 8) + " aviso(s)") }
+        return r
+    }
+
+    static func report(_ lang: Lang, _ dir: URL) -> String {
+        let items = run(lang, dir)
+        let bad = items.filter { $0.level == 2 }.count
+        let warn = items.filter { $0.level == 1 }.count
+        var s = items.map { $0.line }.joined(separator: "\n")
+        s += "\n\n" + (bad > 0 ? "✗ " + String(bad) + " erro(s) — corrija antes de enviar para o GitHub."
+                              : (warn > 0 ? "⚠️ " + String(warn) + " aviso(s), mas nada impede o envio."
+                                          : "✓ Tudo certo para enviar."))
+        return s
+    }
+}

@@ -174,8 +174,10 @@ struct BuildView: View {
     @StateObject private var flow = BuildFlow()
     @State private var zipURL: URL? = nil
     @State private var showPicker = false
-    @State private var repo = UserDefaults.standard.string(forKey: "zip2git_repo") ?? ""
-    @State private var branch = ""
+    @State private var repoFull = UserDefaults.standard.string(forKey: "zip2git_repo") ?? ""
+    @State private var branch = "main"
+    @State private var branches: [String] = ["main"]
+    @State private var showRepos = false
     @State private var message = ""
     @State private var build = true
     @State private var replaceAll = false
@@ -183,16 +185,30 @@ struct BuildView: View {
     @State private var history: [BuildRecord] = BuildHistory.list()
 
     var canStart: Bool {
-        zipURL != nil && !repo.trimmingCharacters(in: .whitespaces).isEmpty && !flow.running && gh.user != nil
+        zipURL != nil && !repoFull.isEmpty && !flow.running && gh.user != nil
     }
 
     func start() {
         guard let z = zipURL else { return }
-        UserDefaults.standard.set(repo, forKey: "zip2git_repo")
+        UserDefaults.standard.set(repoFull, forKey: "zip2git_repo")
         Task { @MainActor in
-            await flow.run(gh: gh, zip: z, repo: repo, branch: branch, message: message, replaceAll: replaceAll, build: build)
+            await flow.run(gh: gh, zip: z, repo: repoFull, branch: branch, message: message, replaceAll: replaceAll, build: build)
             history = BuildHistory.list()
         }
+    }
+
+    func sanitize(_ n: String) -> String {
+        let mapped = n.map { ($0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" || $0 == ".") ? String($0) : "-" }.joined()
+        return mapped.trimmingCharacters(in: CharacterSet(charactersIn: "-."))
+    }
+
+    func loadBranches() async {
+        guard !repoFull.isEmpty else { branches = ["main"]; return }
+        var b = await gh.branches(of: repoFull)
+        b.removeAll { $0 == "main" }
+        b.insert("main", at: 0)
+        branches = b
+        if !b.contains(branch) { branch = "main" }
     }
 
     @ViewBuilder func icon(_ s: BuildFlow.State) -> some View {
@@ -249,20 +265,50 @@ struct BuildView: View {
             }
 
             Section(header: Text("Destino"),
-                    footer: Text("Se o repositório não existir, o CodeLab cria (privado) com esse único commit. Branch vazia = a padrão.")) {
-                TextField("usuario/repositorio ou só o nome", text: $repo)
-                    .textInputAutocapitalization(.never)
-                    .disableAutocorrection(true)
-                TextField("branch (opcional)", text: $branch)
-                    .textInputAutocapitalization(.never)
-                    .disableAutocorrection(true)
-                TextField("mensagem do commit (opcional)", text: $message)
+                    footer: Text("A conta é a que você já conectou. Se o repositório não existir, o CodeLab cria (privado) com esse único commit.")) {
+                Button { showRepos = true } label: {
+                    HStack {
+                        Text("Repositório").foregroundColor(.primary)
+                        Spacer()
+                        Text(repoFull.isEmpty ? "Escolher…" : repoFull)
+                            .foregroundColor(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                        Image(systemName: "chevron.right").font(.caption).foregroundColor(.secondary)
+                    }
+                }
+                HStack {
+                    Text("Branch")
+                    Spacer()
+                    if branches.count > 1 {
+                        Menu {
+                            ForEach(branches, id: \.self) { b in
+                                Button {
+                                    branch = b
+                                } label: {
+                                    if b == branch { Label(b, systemImage: "checkmark") } else { Text(b) }
+                                }
+                            }
+                        } label: {
+                            HStack(spacing: 4) {
+                                Text(branch)
+                                Image(systemName: "chevron.up.chevron.down").font(.caption2)
+                            }
+                            .foregroundColor(.accentColor)
+                        }
+                    } else {
+                        Text(branch).foregroundColor(.secondary)
+                    }
+                }
             }
 
             Section(header: Text("Opções"),
                     footer: Text("Compilar roda o .github/workflows/build.yml do projeto (com on: workflow_dispatch) e traz o APK ou IPA de volta para o aparelho.")) {
                 Toggle("Compilar e baixar o resultado", isOn: $build)
-                Toggle("Apagar o que não está no .zip", isOn: $replaceAll)
+                DisclosureGroup("Avançado") {
+                    TextField("mensagem do commit", text: $message)
+                    Toggle("Apagar o que não está no .zip", isOn: $replaceAll)
+                }
             }
 
             Section {
@@ -340,7 +386,25 @@ struct BuildView: View {
         .dockInset()
         .navigationTitle("Build")
         .navigationBarTitleDisplayMode(.inline)
-        .sheet(isPresented: $showPicker) { ZipPicker { url in zipURL = url } }
+        .sheet(isPresented: $showPicker) {
+            ZipPicker { url in
+                zipURL = url
+                if repoFull.isEmpty, let u = gh.user {
+                    repoFull = u + "/" + sanitize(url.deletingPathExtension().lastPathComponent)
+                }
+            }
+        }
+        .sheet(isPresented: $showRepos) {
+            RepoPickerView(current: repoFull) { picked in repoFull = picked }.environmentObject(gh)
+        }
+        .onChange(of: repoFull) { v in
+            UserDefaults.standard.set(v, forKey: "zip2git_repo")
+            Task { await loadBranches() }
+        }
+        .onAppear {
+            if !repoFull.isEmpty && !repoFull.contains("/"), let u = gh.user { repoFull = u + "/" + repoFull }
+            Task { await loadBranches() }
+        }
         .sheet(item: $share) { item in ShareSheet(items: [item.url]) }
     }
 }
@@ -368,6 +432,124 @@ struct ZipPicker: UIViewControllerRepresentable {
         init(_ onPick: @escaping (URL) -> Void) { self.onPick = onPick }
         func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
             if let u = urls.first { onPick(u) }
+        }
+    }
+}
+
+// MARK: - Favoritos
+
+enum Favorites {
+    static let key = "favRepos"
+    static func list() -> [String] { UserDefaults.standard.stringArray(forKey: key) ?? [] }
+    static func toggle(_ slug: String) {
+        var a = list()
+        if let i = a.firstIndex(of: slug) { a.remove(at: i) } else { a.append(slug) }
+        UserDefaults.standard.set(a, forKey: key)
+    }
+}
+
+// MARK: - Escolher repositório
+
+struct RepoPickerView: View {
+    @EnvironmentObject var gh: GitHub
+    @Environment(\.presentationMode) var pm
+    let current: String
+    let onPick: (String) -> Void
+    @State private var query = ""
+    @State private var favs: [String] = Favorites.list()
+    @State private var loading = false
+
+    var filtered: [GHRepo] {
+        let q = query.lowercased()
+        return gh.allRepos.filter { q.isEmpty || $0.fullName.lowercased().contains(q) }
+    }
+    var favRepos: [GHRepo] { filtered.filter { favs.contains($0.fullName) } }
+    var others: [GHRepo] { filtered.filter { !favs.contains($0.fullName) } }
+
+    var newName: String {
+        let n = query.trimmingCharacters(in: .whitespaces)
+        if n.isEmpty || n.contains("/") { return "" }
+        return String(n.map { ($0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" || $0 == ".") ? $0 : "-" })
+    }
+
+    func pick(_ slug: String) {
+        onPick(slug)
+        pm.wrappedValue.dismiss()
+    }
+
+    func row(_ r: GHRepo) -> some View {
+        let fav = favs.contains(r.fullName)
+        return Button { pick(r.fullName) } label: {
+            HStack(spacing: 8) {
+                if fav {
+                    Image(systemName: "star.fill")
+                        .font(.system(size: 11))
+                        .foregroundColor(.yellow)
+                        .frame(width: 14)
+                }
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(r.name).foregroundColor(.primary)
+                    if let l = r.language {
+                        Text(l).font(.caption).foregroundColor(.secondary)
+                    }
+                }
+                Spacer()
+                if r.isPrivate { Image(systemName: "lock").font(.caption).foregroundColor(.secondary) }
+                if r.fullName == current { Image(systemName: "checkmark").foregroundColor(.accentColor) }
+            }
+        }
+        .swipeActions(edge: .leading) {
+            Button {
+                Favorites.toggle(r.fullName)
+                favs = Favorites.list()
+            } label: {
+                Label(fav ? "Desfavoritar" : "Favoritar", systemImage: fav ? "star.slash" : "star")
+            }
+            .tint(.yellow)
+        }
+        .contextMenu {
+            Button {
+                Favorites.toggle(r.fullName)
+                favs = Favorites.list()
+            } label: {
+                Label(fav ? "Desfavoritar" : "Favoritar", systemImage: fav ? "star.slash" : "star")
+            }
+        }
+    }
+
+    var body: some View {
+        NavigationView {
+            List {
+                if !newName.isEmpty, let u = gh.user,
+                   !gh.allRepos.contains(where: { $0.fullName.lowercased() == (u + "/" + newName).lowercased() }) {
+                    Section {
+                        Button { pick(u + "/" + newName) } label: {
+                            Label("Criar novo: " + u + "/" + newName, systemImage: "plus.circle")
+                        }
+                    }
+                }
+                if !favRepos.isEmpty {
+                    Section(header: Text("Favoritos")) {
+                        ForEach(favRepos) { r in row(r) }
+                    }
+                }
+                Section(header: Text("Repositórios"),
+                        footer: Text("Deslize um repositório para a direita (ou segure) para favoritar.")) {
+                    if loading && gh.allRepos.isEmpty {
+                        HStack { ProgressView(); Text("Carregando…").foregroundColor(.secondary) }
+                    }
+                    ForEach(others) { r in row(r) }
+                }
+            }
+            .searchable(text: $query, prompt: "Buscar ou criar")
+            .navigationTitle("Repositório")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .navigationBarTrailing) { Button("Fechar") { pm.wrappedValue.dismiss() } } }
+            .task {
+                loading = true
+                await gh.loadAllRepos()
+                loading = false
+            }
         }
     }
 }

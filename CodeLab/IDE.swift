@@ -307,6 +307,7 @@ struct IDEView: View {
     @State private var showFiles = false
     @State private var showTools = false
     @State private var showOut = false
+    @State private var showRun = false
     @State private var output = ""
     @State private var showSearch = false
     @State private var shareItem: ShareItem? = nil
@@ -379,15 +380,24 @@ struct IDEView: View {
         }
     }
 
-    func runLocal() {
+    func runSource(_ stdin: String) -> String {
         save()
         let exts = lang == .java ? ["java"] : ["c", "cpp", "cc", "cxx"]
         var src = ""
         for f in Store.files(in: dir) where exts.contains((f as NSString).pathExtension.lowercased()) {
             src += read(dir.appendingPathComponent(f)) + "\n"
         }
-        output = Interp(java: lang == .java).run(src)
-        UINotificationFeedbackGenerator().notificationOccurred(output.contains("[erro]") ? .error : .success)
+        return Interp(java: lang == .java, input: stdin).run(src)
+    }
+
+    func runLocal() {
+        save()
+        showRun = true
+    }
+
+    func checkProject() {
+        save()
+        output = ProjectCheck.report(lang, dir)
         showOut = true
     }
 
@@ -464,6 +474,7 @@ struct IDEView: View {
                 Menu {
                     Button("Salvar") { save() }
                     Button("Buscar no projeto") { save(); showSearch = true }
+                    Button("Verificar projeto") { checkProject() }
                     Button("Exportar projeto (.zip)") { exportZip() }
                     Button("Corrigir erros") { text = Linter.fix(text, issues, ext: ext) }
                     Button("GitHub e ferramentas") { save(); showTools = true }
@@ -513,6 +524,9 @@ struct IDEView: View {
             ProjectSearchView(dir: dir) { u, l in open(u, line: l) }
         }
         .sheet(item: $shareItem) { item in ShareSheet(items: [item.url]) }
+        .sheet(isPresented: $showRun) {
+            RunSheet(title: lang.title, storageKey: "stdin-" + lang.rawValue + "-" + name) { stdin in runSource(stdin) }
+        }
         .sheet(isPresented: $showOut) {
             NavigationView {
                 ScrollView {
@@ -525,6 +539,60 @@ struct IDEView: View {
                 .navigationTitle("Resultado")
                 .toolbar { ToolbarItem(placement: .navigationBarTrailing) { Button("Fechar") { showOut = false } } }
             }
+        }
+    }
+}
+
+/// Executa o programa no aparelho. A caixa "Entrada" alimenta cin / Scanner.
+struct RunSheet: View {
+    let title: String
+    let storageKey: String
+    let run: (String) -> String
+    @Environment(\.presentationMode) var pm
+    @State private var input = ""
+    @State private var output = ""
+    @State private var showInput = false
+
+    func exec() {
+        UserDefaults.standard.set(input, forKey: storageKey)
+        output = run(input)
+        if output.contains("a entrada acabou") { showInput = true }
+        UINotificationFeedbackGenerator().notificationOccurred(output.contains("[erro]") ? .error : .success)
+    }
+
+    var body: some View {
+        NavigationView {
+            VStack(spacing: 0) {
+                DisclosureGroup("Entrada (para cin e Scanner)", isExpanded: $showInput) {
+                    TextEditor(text: $input)
+                        .font(.system(.footnote, design: .monospaced))
+                        .frame(height: 80)
+                        .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color(.separator)))
+                    Text("Escreva aqui o que o programa vai ler, um valor por linha ou separados por espaço.")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                }
+                .padding()
+                Button { exec() } label: {
+                    Label("Executar de novo", systemImage: "play.fill")
+                }
+                .padding(.bottom, 8)
+                Divider()
+                ScrollView {
+                    Text(output)
+                        .font(.system(.footnote, design: .monospaced))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding()
+                        .textSelection(.enabled)
+                }
+            }
+            .navigationTitle(title)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .navigationBarTrailing) { Button("Fechar") { pm.wrappedValue.dismiss() } } }
+        }
+        .onAppear {
+            input = UserDefaults.standard.string(forKey: storageKey) ?? ""
+            exec()
         }
     }
 }

@@ -23,7 +23,8 @@ Feito para funcionar bem em telas pequenas, a partir do iPhone 6s com iOS 15.
 ## Diferenciais
 
 - **Compila Android e iOS sem computador.** O CodeLab envia o projeto, o GitHub Actions monta o APK ou o IPA e o app baixa o resultado de volta. Em seguida, o botão **Instalar / compartilhar** abre o arquivo direto no TrollStore, em Arquivos ou por AirDrop.
-- **Roda C/C++ e Java no próprio aparelho, offline.** Sem servidor, sem conta e sem espera; ideal para estudar lógica de programação.
+- **Roda C/C++ e Java no próprio aparelho, offline.** Com variáveis globais, arrays (inclusive 2D), `switch`, `do-while`, `for-each`, strings, funções matemáticas e **entrada de dados** (`cin`, `Scanner`) por uma caixa de entrada. Sem servidor, sem conta e sem espera.
+- **Verificar projeto antes de enviar.** Checa localmente o manifesto, o Gradle, o `project.yml`, o `project.godot`, o workflow e os arquivos de código, para você não gastar um build à toa.
 - **Da .zip ao APK/IPA em um toque.** A aba **Build** envia o .zip em um único commit, dispara o build, mostra cada etapa ao vivo e baixa o resultado para o aparelho.
 - **Navegador de arquivos com dois modos.** Ícones, como no app Arquivos do iOS, ou árvore, como no Android Studio, com menu de contexto completo.
 - **Busca em todo o projeto** e **exportação em .zip** para backup ou envio.
@@ -64,13 +65,13 @@ Feito para funcionar bem em telas pequenas, a partir do iPhone 6s com iOS 15.
 ### GitHub
 - **Login oficial**: a página do GitHub abre dentro do app, com email, senha e verificação em 2 etapas.
 - Envio do projeto (add, commit e push) direto do app.
-- **Aba Build**: escolha um .zip, o repositório e a branch. O CodeLab envia tudo em **um único commit** (no estilo do ZipToGit), dispara o workflow, mostra as **etapas ao vivo** (abrir, enviar, iniciar, compilar, baixar) com o tempo decorrido e entrega o APK ou IPA pronto para instalar ou compartilhar. Mantém um histórico dos últimos builds.
+- **Aba Build**: escolha um .zip e o repositório numa lista com **busca e favoritos (★)**; a conta é a que você já conectou e a branch é a `main`, com um menu para trocar quando o repositório tem outras. O CodeLab envia tudo em **um único commit** (no estilo do ZipToGit), dispara o workflow, mostra as **etapas ao vivo** (abrir, enviar, iniciar, compilar, baixar) com o tempo decorrido e entrega o APK ou IPA pronto para instalar ou compartilhar. Mantém um histórico dos últimos builds.
 - Perfil com foto, nome, números da conta e repositórios recentes, mais um atalho para abrir a pasta do CodeLab no app Arquivos.
 - Execução do workflow e leitura do resultado dentro do app.
 
 ### Terminal
-- **Sugestões enquanto você digita**: comandos, subcomandos do git e nomes de pastas e arquivos da pasta atual, em botões que completam com um toque; a tecla **Tab** completa a primeira sugestão. Com o campo vazio, nada aparece.
-- Saída com cores (erros em vermelho, sucessos em verde, comandos em destaque), histórico salvo entre as sessões, setas ↑ ↓ para repetir comandos e atalhos `/ ~ - . | >` acima do teclado.
+- **Digitação no próprio terminal**: você escreve o comando direto na última linha, como num terminal de verdade. Quando há sugestão (comando, subcomando do `git`, pasta ou arquivo, ou correção de um erro de digitação), o texto fica **sublinhado de amarelo** e uma **lâmpada** aparece no canto; tocando no texto ou na lâmpada, abre uma janelinha pendurada com as opções. A tecla **Tab** completa a primeira. Com o campo vazio, nada aparece.
+- Saída com cores (erros em vermelho, sucessos em verde, comandos em destaque), histórico salvo entre as sessões, ↑ ↓ para repetir comandos e atalhos `/ ~ - . | >` acima do teclado.
 - Menu para copiar toda a saída ou limpar a tela.
 - Comandos de arquivo (`ls`, `cd`, `cat`, `cp`, `mv`, `rm`, `mkdir`…).
 - `git` integrado ao GitHub: `clone`, `status`, `add`, `commit`, `push`, `pull`, `log`.
@@ -78,7 +79,7 @@ Feito para funcionar bem em telas pequenas, a partir do iPhone 6s com iOS 15.
 
 ### Interface
 - Barra inferior com **Projetos**, **Build**, **Terminal** e **Perfil**; o conteúdo sobe junto, sem ficar escondido atrás dela.
-- **Animações fluidas** (opcional): transições com mola e um borrão de movimento ao trocar de aba, e resposta ao toque nos botões.
+- **Animações fluidas** (opcional): transições com mola e borrão de movimento ao trocar de aba, resposta ao toque nos botões e uma bolinha "líquida" na barra, que estica e embaça enquanto corre de uma aba para a outra.
 - Ao editar código, a barra encolhe para uma faixa fina, ou some, conforme a configuração.
 - Desfoque da barra, ocultar ao programar e tamanho da fonte em **Perfil → Configurações**.
 
@@ -105,7 +106,7 @@ Depois disso, basta tocar em **Entrar com GitHub** e fazer o login normalmente n
 
 ## Limites conhecidos
 
-- **Execução local** (C/C++ e Java): suporta variáveis, `if`, `while`, `for`, funções, recursão, `printf`, `cout` e `System.out`. Ainda não há arrays, ponteiros, classes com objetos, entrada de dados (`cin`, `Scanner`) nem variáveis globais.
+- **Execução local** (C/C++ e Java): suporta variáveis (inclusive globais), arrays, `if`, `while`, `do-while`, `for`, `for-each`, `switch`, funções, recursão, `printf`, `cout`, `System.out`, `cin` e `Scanner`. Ainda não há ponteiros, classes com objetos, templates nem a STL (`vector`, `map`…).
 - **Terminal**: não existe `gcc`, `javac` nem Python. O iOS não permite executar compiladores nativos; para isso use o botão de executar ou o GitHub Actions.
 - **Importar .zip**: arquivos de até 95 MB; a permissão de execução de scripts (`.sh`) não é preservada.
 - O GitHub Actions usa os minutos gratuitos da sua conta.
@@ -121,7 +122,8 @@ CodeLab/
 ├── Linter.swift         corretor de erros
 ├── Interp.swift         interpretador de C/C++ e Java
 ├── Extras.swift         busca, exportar .zip e compartilhar
-├── Terminal.swift       terminal e comandos
+├── Terminal.swift       comandos e catálogo do terminal
+├── TerminalText.swift   terminal digitável, sugestões e lâmpada
 ├── RealShell.swift      ponte com o ios_system
 ├── GitHub.swift         API do GitHub, login e envio
 ├── GitEngine.swift      git sobre a API do GitHub
