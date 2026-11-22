@@ -1,7 +1,7 @@
 import Foundation
 import UIKit
 
-struct GHRepo: Identifiable {
+struct GHRepo: Identifiable, Codable {
     let id: Int
     let name: String
     let isPrivate: Bool
@@ -9,6 +9,9 @@ struct GHRepo: Identifiable {
     let url: String
     var fullName: String = ""
     var defaultBranch: String = "main"
+    var description: String? = nil
+    var stars: Int = 0
+    var updatedAt: String = ""
 }
 
 struct GHError: LocalizedError {
@@ -42,7 +45,7 @@ final class GitHub: ObservableObject {
     @Published var following: Int = UserDefaults.standard.integer(forKey: "gh_following")
     @Published var repos: [GHRepo] = []
     @Published var lastBuilt: URL? = nil
-    @Published var allRepos: [GHRepo] = []
+    @Published var allRepos: [GHRepo] = GitHub.cachedRepos()
     @Published var verifyURL: String = ""
 
     func add(_ s: String) {
@@ -119,6 +122,12 @@ final class GitHub: ObservableObject {
     }
 
 
+    static func cachedRepos() -> [GHRepo] {
+        guard let d = UserDefaults.standard.data(forKey: "repoCache"),
+              let a = try? JSONDecoder().decode([GHRepo].self, from: d) else { return [] }
+        return a
+    }
+
     /// Todos os repositórios da conta (até 300), do mais recente para o mais antigo.
     func loadAllRepos() async {
         guard user != nil else { return }
@@ -134,11 +143,17 @@ final class GitHub: ObservableObject {
                                   language: x["language"] as? String,
                                   url: (x["html_url"] as? String) ?? "",
                                   fullName: (x["full_name"] as? String) ?? name,
-                                  defaultBranch: (x["default_branch"] as? String) ?? "main"))
+                                  defaultBranch: (x["default_branch"] as? String) ?? "main",
+                                  description: x["description"] as? String,
+                                  stars: (x["stargazers_count"] as? Int) ?? 0,
+                                  updatedAt: (x["updated_at"] as? String) ?? ""))
             }
             if arr.count < 100 { break }
         }
-        if !acc.isEmpty { allRepos = acc }
+        if !acc.isEmpty {
+            allRepos = acc
+            if let d = try? JSONEncoder().encode(acc) { UserDefaults.standard.set(d, forKey: "repoCache") }
+        }
     }
 
     /// Branches de um repositório ("dono/nome"). Vazio se o repositório não existir.
@@ -176,7 +191,12 @@ final class GitHub: ObservableObject {
                 return GHRepo(id: id, name: name,
                               isPrivate: (x["private"] as? Bool) ?? false,
                               language: x["language"] as? String,
-                              url: (x["html_url"] as? String) ?? "")
+                              url: (x["html_url"] as? String) ?? "",
+                              fullName: (x["full_name"] as? String) ?? name,
+                              defaultBranch: (x["default_branch"] as? String) ?? "main",
+                              description: x["description"] as? String,
+                              stars: (x["stargazers_count"] as? Int) ?? 0,
+                              updatedAt: (x["updated_at"] as? String) ?? "")
             }
         }
     }
@@ -249,6 +269,8 @@ final class GitHub: ObservableObject {
         followers = 0
         following = 0
         repos = []
+        allRepos = []
+        UserDefaults.standard.removeObject(forKey: "repoCache")
     }
 
     // MARK: leitura do repositório

@@ -319,7 +319,8 @@ struct IDEView: View {
 
     var dir: URL { store.dir(lang, name) }
     var ext: String { current?.pathExtension.lowercased() ?? "" }
-    var issues: [Issue] { current == nil ? [] : Linter.check(text, ext: ext) }
+    @State private var issues: [Issue] = []
+    @State private var lintTask: Task<Void, Never>? = nil
 
     func read(_ u: URL) -> String { (try? String(contentsOf: u)) ?? "" }
 
@@ -338,12 +339,28 @@ struct IDEView: View {
         }
     }
 
+    func scheduleLint() {
+        lintTask?.cancel()
+        lintTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 450_000_000)
+            if Task.isCancelled { return }
+            let t = text
+            let e = ext
+            let has = current != nil
+            let result = await Task.detached(priority: .utility) { () -> [Issue] in
+                has ? Linter.check(t, ext: e) : []
+            }.value
+            if !Task.isCancelled { issues = result }
+        }
+    }
+
     func open(_ u: URL, line l: Int? = nil) {
         if current?.path != u.path {
             save()
             current = u
             text = read(u)
             dirty = false
+            scheduleLint()
         }
         if !openFiles.contains(where: { $0.path == u.path }) { openFiles.append(u) }
         if let l = l { jump = JumpRequest(line: l) }
@@ -488,6 +505,7 @@ struct IDEView: View {
             if current != nil {
                 dirty = true
                 scheduleSave()
+                scheduleLint()
             }
         }
         .onAppear {

@@ -3,7 +3,19 @@ import UIKit
 
 // MARK: - Preferências
 
+@MainActor
+enum Haptics {
+    static let light = UIImpactFeedbackGenerator(style: .light)
+    static func tap() {
+        light.impactOccurred()
+        light.prepare()
+    }
+}
+
 enum Prefs {
+    static var tabBlur: Bool { UserDefaults.standard.object(forKey: "tabBlur") as? Bool ?? true }
+    static var glassPill: Bool { UserDefaults.standard.object(forKey: "glassPill") as? Bool ?? true }
+    static var elastic: Bool { UserDefaults.standard.object(forKey: "elastic") as? Bool ?? true }
     static var fluid: Bool { UserDefaults.standard.object(forKey: "fluidAnimations") as? Bool ?? true }
     static var terminalTips: Bool { UserDefaults.standard.object(forKey: "terminalTips") as? Bool ?? false }
     static var autoPairs: Bool { UserDefaults.standard.object(forKey: "autoPairs") as? Bool ?? true }
@@ -138,7 +150,7 @@ struct RootView: View {
                 layer(.terminal) { NavigationView { TerminalView() }.navigationViewStyle(.stack) }
                 layer(.profile) { NavigationView { ProfileView() }.navigationViewStyle(.stack) }
             }
-            .modifier(MotionBlur(phase: app.blurPhase))
+            .modifier(MotionBlur(phase: Prefs.tabBlur ? app.blurPhase : 0))
 
             if app.dockVisible {
                 DockView(mini: app.dockMini)
@@ -154,6 +166,44 @@ struct RootView: View {
 }
 
 // MARK: - Dock
+
+/// Gota de vidro: azul translúcida, com brilho e borda em relevo. O que passa por baixo desfoca só nas bordas;
+/// no centro dá para ver o ícone nitidamente.
+struct GlassPill: View {
+    let width: CGFloat
+    let height: CGFloat
+    let glass: Bool
+    let stretch: CGFloat
+
+    var body: some View {
+        ZStack(alignment: .top) {
+            if glass {
+                Capsule()
+                    .fill(LinearGradient(colors: [Color.accentColor.opacity(0.24), Color.accentColor.opacity(0.08)],
+                                         startPoint: .top, endPoint: .bottom))
+                Capsule()
+                    .fill(.ultraThinMaterial)
+                    .mask(Capsule().strokeBorder(Color.white, lineWidth: 10).blur(radius: 3.5))
+                Capsule()
+                    .fill(LinearGradient(colors: [Color.white.opacity(0.55), Color.white.opacity(0)],
+                                         startPoint: .top, endPoint: .bottom))
+                    .frame(height: height * 0.42)
+                    .padding(.horizontal, 9)
+                    .padding(.top, 3)
+                Capsule()
+                    .strokeBorder(LinearGradient(colors: [Color.white.opacity(0.85), Color.accentColor.opacity(0.35), Color.white.opacity(0.2)],
+                                                 startPoint: .topLeading, endPoint: .bottomTrailing),
+                                  lineWidth: 1.2)
+            } else {
+                Capsule().fill(Color.accentColor.opacity(0.14))
+            }
+        }
+        .frame(width: width, height: height)
+        .shadow(color: Color.accentColor.opacity(glass ? 0.35 : 0), radius: 6, x: 0, y: 3)
+        .scaleEffect(x: 1, y: 1 - min(0.14, stretch / 160))
+        .blur(radius: min(2.2, stretch / 24))
+    }
+}
 
 struct DockView: View {
     let mini: Bool
@@ -178,15 +228,14 @@ struct DockView: View {
         Entry(tab: .profile, title: "Perfil", icon: "person.crop.circle", iconSelected: "person.crop.circle.fill")
     ]
 
-    let inset: CGFloat = 10
+    let inset: CGFloat = 8
 
+    /// Seleciona assim que o dedo encosta (sem esperar soltar).
     func select(_ t: AppState.Tab) {
-        if app.tab != t { UIImpactFeedbackGenerator(style: .light).impactOccurred() }
+        if app.tab != t { Haptics.tap() }
         app.select(t)
     }
 
-    /// A bolinha é "líquida": a borda da frente corre rápido e a de trás vem devagar,
-    /// então ela estica no caminho, fica borrada enquanto estica e depois se junta de novo.
     func place(_ idx: Int, width: CGFloat, animated: Bool) {
         let cw = width / CGFloat(entries.count)
         let tl = CGFloat(idx) * cw + inset
@@ -194,6 +243,13 @@ struct DockView: View {
         if !animated || !Prefs.fluid {
             pillL = tl
             pillR = tr
+            return
+        }
+        if !Prefs.elastic {
+            withAnimation(.spring(response: 0.34, dampingFraction: 0.78)) {
+                pillL = tl
+                pillR = tr
+            }
             return
         }
         let fast = Animation.spring(response: 0.26, dampingFraction: 0.72)
@@ -239,12 +295,15 @@ struct DockView: View {
         .foregroundColor(sel ? .accentColor : .secondary)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .contentShape(Rectangle())
+        .accessibilityAddTraits(.isButton)
     }
 
+    /// Preta (ou branca, no modo claro) e só desfoca quando algo passa por trás.
     var bar: some View {
-        Group {
+        ZStack {
             if blur {
                 Rectangle().fill(.ultraThinMaterial)
+                Color(.systemBackground).opacity(0.62)
             } else {
                 Color(.systemBackground)
             }
@@ -255,21 +314,18 @@ struct DockView: View {
     var body: some View {
         GeometryReader { g in
             let cw = g.size.width / CGFloat(entries.count)
-            let stretch = max(0, (pillR - pillL) - (cw - 2 * inset))
+            let stretch = Prefs.elastic ? max(0, (pillR - pillL) - (cw - 2 * inset)) : 0
             ZStack(alignment: .leading) {
-                if !mini {
-                    Capsule()
-                        .fill(Color.accentColor.opacity(0.14))
-                        .frame(width: max(8, pillR - pillL), height: 40)
-                        .scaleEffect(x: 1, y: 1 - min(0.14, stretch / 160))
-                        .blur(radius: min(3.5, stretch / 16))
-                        .offset(x: pillL)
-                }
                 HStack(spacing: 0) {
                     ForEach(entries, id: \.title) { e in
-                        Button { select(e.tab) } label: { cell(e) }
-                            .buttonStyle(PressableStyle())
+                        cell(e)
+                            .gesture(DragGesture(minimumDistance: 0).onChanged { _ in select(e.tab) })
                     }
+                }
+                if !mini {
+                    GlassPill(width: max(8, pillR - pillL), height: 42, glass: Prefs.glassPill, stretch: stretch)
+                        .offset(x: pillL)
+                        .allowsHitTesting(false)
                 }
             }
             .onAppear {
@@ -294,6 +350,9 @@ struct HomeView: View {
     @EnvironmentObject var store: Store
     @EnvironmentObject var app: AppState
     @State private var recents: [RecentItem] = []
+    @State private var showClonePicker = false
+    @State private var showDownload = false
+    @State private var pendingSlug: String? = nil
 
     func loadRecents() {
         recents = Recents.list().compactMap { (s: String) -> RecentItem? in
@@ -341,12 +400,39 @@ struct HomeView: View {
         .cornerRadius(12)
     }
 
+    var downloadBanner: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "arrow.down.circle.fill")
+                .font(.system(size: 20))
+                .foregroundColor(.accentColor)
+                .frame(width: 38, height: 38)
+                .background(Color.accentColor.opacity(0.15))
+                .cornerRadius(10)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Baixar do GitHub").font(.subheadline.weight(.semibold))
+                Text("Traga um dos seus repositórios para o aparelho").font(.caption).foregroundColor(.secondary)
+            }
+            Spacer()
+            Image(systemName: "chevron.right").font(.caption).foregroundColor(.secondary)
+        }
+        .foregroundColor(.primary)
+        .padding(12)
+        .background(Color(.secondarySystemBackground))
+        .cornerRadius(12)
+    }
+
     var body: some View {
         NavigationView {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
-                    Button { app.select(.build) } label: { buildBanner }
-                        .buttonStyle(PressableStyle())
+                    VStack(spacing: 10) {
+                        Button { app.select(.build) } label: { buildBanner }
+                            .buttonStyle(PressableStyle())
+                        Button {
+                            if gh.user == nil { app.select(.profile) } else { showClonePicker = true }
+                        } label: { downloadBanner }
+                            .buttonStyle(PressableStyle())
+                    }
                     if !recents.isEmpty {
                         VStack(alignment: .leading, spacing: 8) {
                             Text("Recentes").font(.headline)
@@ -371,6 +457,17 @@ struct HomeView: View {
                 .padding()
             }
             .dockInset()
+            .sheet(isPresented: $showClonePicker, onDismiss: { if pendingSlug != nil { showDownload = true } }) {
+                RepoPickerView(current: "") { slug in pendingSlug = slug }.environmentObject(gh)
+            }
+            .sheet(isPresented: $showDownload, onDismiss: { pendingSlug = nil }) {
+                if let sl = pendingSlug {
+                    let r = gh.allRepos.first(where: { $0.fullName == sl })
+                    DownloadRepoView(slug: sl, branch: r?.defaultBranch ?? "main", language: r?.language)
+                        .environmentObject(gh)
+                        .environmentObject(app)
+                }
+            }
             .navigationTitle("CodeLab")
             .onAppear { loadRecents() }
         }
@@ -383,6 +480,7 @@ struct HomeView: View {
 struct ProfileView: View {
     @EnvironmentObject var gh: GitHub
     @State private var showLogin = false
+    @State private var favs = Favorites.list()
 
     func stat(_ n: Int, _ label: String) -> some View {
         VStack(spacing: 2) {
@@ -449,21 +547,32 @@ struct ProfileView: View {
             Section { header }
                 .listRowBackground(Color.clear)
 
-            if gh.user != nil && !gh.repos.isEmpty {
-                Section(header: Text("Repositórios recentes")) {
-                    ForEach(gh.repos) { r in
-                        if let u = URL(string: r.url) {
-                            Link(destination: u) {
-                                HStack(spacing: 10) {
-                                    Image(systemName: r.isPrivate ? "lock" : "book.closed").frame(width: 22).foregroundColor(.secondary)
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text(r.name).foregroundColor(.primary)
-                                        if let lang = r.language { Text(lang).font(.caption).foregroundColor(.secondary) }
+            if gh.user != nil {
+                let repos = gh.allRepos.isEmpty ? gh.repos : gh.allRepos
+                if !repos.isEmpty {
+                    Section(header:
+                        HStack {
+                            Text("Repositórios")
+                            Spacer()
+                            NavigationLink("Ver todos") { RepoListView() }
+                                .font(.footnote)
+                        }
+                        .textCase(nil)
+                    ) {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            LazyHStack(spacing: 10) {
+                                ForEach(repos.filter { favs.contains($0.fullName) } + repos.filter { !favs.contains($0.fullName) }) { r in
+                                    NavigationLink(destination: RepoDetailView(repo: r)) {
+                                        RepoCard(repo: r, fav: favs.contains(r.fullName))
                                     }
-                                    Spacer()
+                                    .buttonStyle(PressableStyle())
                                 }
                             }
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 6)
                         }
+                        .listRowInsets(EdgeInsets())
+                        .listRowBackground(Color.clear)
                     }
                 }
             }
@@ -507,8 +616,15 @@ struct ProfileView: View {
         .navigationTitle("Perfil")
         .navigationBarTitleDisplayMode(.inline)
         .sheet(isPresented: $showLogin) { GitHubLoginView().environmentObject(gh) }
-        .task { await gh.refreshProfile() }
-        .refreshable { await gh.refreshProfile() }
+        .onAppear { favs = Favorites.list() }
+        .task {
+            await gh.refreshProfile()
+            await gh.loadAllRepos()
+        }
+        .refreshable {
+            await gh.refreshProfile()
+            await gh.loadAllRepos()
+        }
     }
 }
 
@@ -522,6 +638,9 @@ struct SettingsView: View {
     @AppStorage("autoIndent") private var autoIndent = true
     @AppStorage("tabWidth") private var tabWidth = 4
     @AppStorage("fluidAnimations") private var fluid = true
+    @AppStorage("tabBlur") private var tabBlur = true
+    @AppStorage("glassPill") private var glassPill = true
+    @AppStorage("elastic") private var elastic = true
     @AppStorage("terminalTips") private var tips = false
 
     var body: some View {
@@ -549,8 +668,11 @@ struct SettingsView: View {
                 .pickerStyle(.segmented)
             }
             Section(header: Text("Animações"),
-                    footer: Text("Transições com mola e efeito de movimento (um borrão que acompanha o deslize) ao trocar de aba, além de resposta ao toque nos botões. Desative em aparelhos mais lentos ou para economizar bateria.")) {
+                    footer: Text("Animações fluidas liga as molas e a resposta ao toque. Cada efeito pode ser desligado separadamente: o desfoque da tela ao trocar de aba, o visual de vidro 3D da gota na barra e a elasticidade (a gota esticando enquanto corre). Desligar tudo deixa o app mais leve em aparelhos lentos.")) {
                 Toggle("Animações fluidas", isOn: $fluid)
+                Toggle("Desfoque ao trocar de aba", isOn: $tabBlur)
+                Toggle("Gota de vidro (efeito 3D)", isOn: $glassPill)
+                Toggle("Elasticidade da gota", isOn: $elastic)
             }
             Section(header: Text("Terminal"),
                     footer: Text("As sugestões aparecem enquanto você digita: o texto fica sublinhado de amarelo e uma lâmpada surge no canto; toque nele para ver. A dica de próximo passo é uma faixa opcional no topo do terminal.")) {

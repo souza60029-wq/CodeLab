@@ -25,6 +25,8 @@ Feito para funcionar bem em telas pequenas, a partir do iPhone 6s com iOS 15.
 - **Compila Android e iOS sem computador.** O CodeLab envia o projeto, o GitHub Actions monta o APK ou o IPA e o app baixa o resultado de volta. Em seguida, o botão **Instalar / compartilhar** abre o arquivo direto no TrollStore, em Arquivos ou por AirDrop.
 - **Roda C/C++ e Java no próprio aparelho, offline.** Com variáveis globais, arrays (inclusive 2D), `switch`, `do-while`, `for-each`, strings, funções matemáticas e **entrada de dados** (`cin`, `Scanner`) por uma caixa de entrada. Sem servidor, sem conta e sem espera.
 - **Verificar projeto antes de enviar.** Checa localmente o manifesto, o Gradle, o `project.yml`, o `project.godot`, o workflow e os arquivos de código, para você não gastar um build à toa.
+- **Seus repositórios dentro do app, só com o que importa para quem programa.** Cartões laterais no Perfil, navegação pelo código, exclusão de arquivos e pastas do repositório (em um commit), execuções do Actions e **artefatos gerados** prontos para baixar e instalar. O CodeLab não tenta ser o app do GitHub: não tem issues, pull requests nem rede social, só a parte de quem constrói.
+- **Baixar do GitHub para o aparelho** em um toque: o projeto vem em um .zip só, vai para a pasta certa e já fica ligado ao repositório para `git commit` e `git push`.
 - **Da .zip ao APK/IPA em um toque.** A aba **Build** envia o .zip em um único commit, dispara o build, mostra cada etapa ao vivo e baixa o resultado para o aparelho.
 - **Navegador de arquivos com dois modos.** Ícones, como no app Arquivos do iOS, ou árvore, como no Android Studio, com menu de contexto completo.
 - **Busca em todo o projeto** e **exportação em .zip** para backup ou envio.
@@ -66,7 +68,9 @@ Feito para funcionar bem em telas pequenas, a partir do iPhone 6s com iOS 15.
 - **Login oficial**: a página do GitHub abre dentro do app, com email, senha e verificação em 2 etapas.
 - Envio do projeto (add, commit e push) direto do app.
 - **Aba Build**: escolha um .zip e o repositório numa lista com **busca e favoritos (★)**; a conta é a que você já conectou e a branch é a `main`, com um menu para trocar quando o repositório tem outras. O CodeLab envia tudo em **um único commit** (no estilo do ZipToGit), dispara o workflow, mostra as **etapas ao vivo** (abrir, enviar, iniciar, compilar, baixar) com o tempo decorrido e entrega o APK ou IPA pronto para instalar ou compartilhar. Mantém um histórico dos últimos builds.
-- Perfil com foto, nome, números da conta e repositórios recentes, mais um atalho para abrir a pasta do CodeLab no app Arquivos.
+- **Perfil** com foto, nome e números da conta, **repositórios em cartões laterais** (favoritos primeiro) e atalho para abrir a pasta do CodeLab no app Arquivos.
+- **Abrir um repositório**: branch atual com menu para trocar, **Código** (pastas e arquivos; deslize ou segure para **apagar do repositório**, em um único commit), **Actions** (execuções, executar de novo, excluir) e **Artefatos** (baixar o .ipa/.apk, compartilhar ou excluir).
+- **Baixar para o aparelho**: tanto pelo repositório quanto pelo cartão "Baixar do GitHub" na tela inicial. Pelo terminal também: `git clone usuario/repositorio`.
 - Execução do workflow e leitura do resultado dentro do app.
 
 ### Terminal
@@ -78,8 +82,8 @@ Feito para funcionar bem em telas pequenas, a partir do iPhone 6s com iOS 15.
 - Terminal real (`ios_system`) para `sed`, `awk`, `tar`, `curl`, `find`, `sort` e outros utilitários.
 
 ### Interface
-- Barra inferior com **Projetos**, **Build**, **Terminal** e **Perfil**; o conteúdo sobe junto, sem ficar escondido atrás dela.
-- **Animações fluidas** (opcional): transições com mola e borrão de movimento ao trocar de aba, resposta ao toque nos botões e uma bolinha "líquida" na barra, que estica e embaça enquanto corre de uma aba para a outra.
+- Barra inferior com **Projetos**, **Build**, **Terminal** e **Perfil**: escura, e só desfoca quando algo passa por trás; o conteúdo sobe junto, sem ficar escondido atrás dela. A aba muda assim que o dedo encosta.
+- **Animações fluidas** (opcional): transições com mola, resposta ao toque nos botões e uma **gota de vidro** azul na barra: translúcida, com brilho e relevo, que desfoca só as bordas do que passa por baixo e deixa o ícone nítido no centro. Cada efeito liga e desliga em **Configurações**: animações fluidas, desfoque ao trocar de aba, gota de vidro (3D) e elasticidade.
 - Ao editar código, a barra encolhe para uma faixa fina, ou some, conforme a configuração.
 - Desfoque da barra, ocultar ao programar e tamanho da fonte em **Perfil → Configurações**.
 
@@ -126,6 +130,8 @@ CodeLab/
 ├── TerminalText.swift   terminal digitável, sugestões e lâmpada
 ├── RealShell.swift      ponte com o ios_system
 ├── GitHub.swift         API do GitHub, login e envio
+├── GitHubRepo.swift     ver repositório, apagar arquivos, Actions, artefatos e baixar
+├── RepoViews.swift      telas do repositório (cartões, código, Actions, artefatos)
 ├── GitEngine.swift      git sobre a API do GitHub
 ├── GitHubWeb.swift      página de login do GitHub dentro do app
 ├── ZipToGit.swift       aba Build: .zip, etapas ao vivo e resultado
