@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 func langColor(_ l: String?) -> Color {
     switch (l ?? "").lowercased() {
@@ -51,8 +52,8 @@ struct RepoCard: View {
         }
         .padding(12)
         .frame(width: 190, height: 104, alignment: .topLeading)
-        .background(Color(.secondarySystemBackground))
-        .cornerRadius(12)
+        .background(RoundedRectangle(cornerRadius: 12).fill(Color(.secondarySystemGroupedBackground)))
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color(.separator).opacity(0.5), lineWidth: 0.5))
     }
 }
 
@@ -62,6 +63,7 @@ struct RepoListView: View {
     @EnvironmentObject var gh: GitHub
     @State private var query = ""
     @State private var favs = Favorites.list()
+    @State private var showNew = false
 
     var sorted: [GHRepo] {
         let q = query.lowercased()
@@ -98,6 +100,12 @@ struct RepoListView: View {
         }
         .searchable(text: $query, prompt: "Buscar repositório")
         .navigationTitle("Repositórios")
+        .toolbar {
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button { showNew = true } label: { Image(systemName: "plus") }
+            }
+        }
+        .sheet(isPresented: $showNew) { NewRepoView().environmentObject(gh) }
         .dockInset()
         .task { await gh.loadAllRepos() }
     }
@@ -111,6 +119,36 @@ struct RepoDetailView: View {
     @State private var branch: String
     @State private var branches: [String] = []
     @State private var showDownload = false
+    @State private var readme: AttributedString? = nil
+    @State private var prompt: NamePrompt? = nil
+    @State private var branchMsg = ""
+
+    func makeBranch() {
+        prompt = NamePrompt(title: "Nova branch a partir de " + branch, initial: "") { n in
+            let name = n.replacingOccurrences(of: " ", with: "-")
+            Task { @MainActor in
+                do {
+                    try await gh.createBranch(repo.fullName, from: branch, name: name)
+                    branches = await gh.branches(of: repo.fullName)
+                    branch = name
+                    branchMsg = ""
+                } catch {
+                    branchMsg = error.localizedDescription
+                }
+            }
+        }
+    }
+
+    func loadReadme() async {
+        readme = nil
+        for n in ["README.md", "readme.md", "README"] {
+            if let t = try? await gh.fileText(repo.fullName, n, branch) {
+                let cut = t.count > 2500 ? String(t.prefix(2500)) + "\n\n…" : t
+                readme = (try? AttributedString(markdown: cut)) ?? AttributedString(cut)
+                return
+            }
+        }
+    }
 
     init(repo: GHRepo) {
         self.repo = repo
@@ -164,20 +202,21 @@ struct RepoDetailView: View {
                     Text(branch).font(.system(.body, design: .monospaced))
                     Image(systemName: "checkmark").font(.caption).foregroundColor(.green)
                     Spacer()
-                    if branches.count > 1 {
-                        Menu {
-                            ForEach(branches, id: \.self) { b in
-                                Button {
-                                    branch = b
-                                } label: {
-                                    if b == branch { Label(b, systemImage: "checkmark") } else { Text(b) }
-                                }
+                    Menu {
+                        ForEach(branches, id: \.self) { b in
+                            Button {
+                                branch = b
+                            } label: {
+                                if b == branch { Label(b, systemImage: "checkmark") } else { Text(b) }
                             }
-                        } label: {
-                            Text("Trocar branch").font(.subheadline)
                         }
+                        Divider()
+                        Button { makeBranch() } label: { Label("Nova branch…", systemImage: "plus") }
+                    } label: {
+                        Text(branches.count > 1 ? "Trocar branch" : "Branch").font(.subheadline)
                     }
                 }
+                if !branchMsg.isEmpty { Text(branchMsg).font(.footnote).foregroundColor(.red) }
             }
 
             Section {
@@ -191,6 +230,12 @@ struct RepoDetailView: View {
                     tile("shippingbox.fill", .blue, "Artefatos")
                 }
             }
+
+            if let r = readme {
+                Section(header: Text("README")) {
+                    Text(r).font(.footnote)
+                }
+            }
         }
         .listStyle(.insetGrouped)
         .dockInset()
@@ -201,7 +246,9 @@ struct RepoDetailView: View {
             if b.isEmpty { b = [repo.defaultBranch] }
             branches = b
             if !b.contains(branch) { branch = b[0] }
+            await loadReadme()
         }
+        .sheet(item: $prompt) { p in NameSheet(p: p) }
         .sheet(isPresented: $showDownload) {
             DownloadRepoView(slug: repo.fullName, branch: branch, language: repo.language)
                 .environmentObject(gh)
@@ -221,6 +268,46 @@ struct RepoCodeView: View {
     @State private var error = ""
     @State private var toDelete: RepoItem? = nil
     @State private var busy = false
+    @State private var showNewFile = false
+    @State private var showPicker = false
+    @State private var prompt: NamePrompt? = nil
+
+    func prefix() -> String { path.isEmpty ? "" : path + "/" }
+
+    func upload(_ urls: [URL]) {
+        Task { @MainActor in
+            busy = true
+            defer { busy = false }
+            do {
+                var files: [(path: String, data: Data)] = []
+                for u in urls { files.append((path: prefix() + u.lastPathComponent, data: try Data(contentsOf: u))) }
+                try await gh.commitFiles(slug, branch: branch, files: files,
+                                         message: "Adicionar " + String(files.count) + " arquivo(s) (CodeLab)")
+                UINotificationFeedbackGenerator().notificationOccurred(.success)
+                await load()
+            } catch {
+                self.error = error.localizedDescription
+                UINotificationFeedbackGenerator().notificationOccurred(.error)
+            }
+        }
+    }
+
+    func newFolder() {
+        prompt = NamePrompt(title: "Nova pasta", initial: "") { n in
+            Task { @MainActor in
+                busy = true
+                defer { busy = false }
+                do {
+                    try await gh.commitFiles(slug, branch: branch,
+                                             files: [(path: prefix() + n + "/.gitkeep", data: Data())],
+                                             message: "Criar pasta " + n + " (CodeLab)")
+                    await load()
+                } catch {
+                    self.error = error.localizedDescription
+                }
+            }
+        }
+    }
 
     func load() async {
         loading = true
@@ -285,14 +372,25 @@ struct RepoCodeView: View {
         .navigationTitle(path.isEmpty ? "Código" : (path as NSString).lastPathComponent)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .navigationBarTrailing) {
+            ToolbarItemGroup(placement: .navigationBarTrailing) {
                 if busy { ProgressView() } else {
                     Button { Task { await load() } } label: { Image(systemName: "arrow.clockwise") }
+                    Menu {
+                        Button { showNewFile = true } label: { Label("Novo arquivo…", systemImage: "doc.badge.plus") }
+                        Button { showPicker = true } label: { Label("Enviar arquivos do aparelho…", systemImage: "square.and.arrow.up") }
+                        Button { newFolder() } label: { Label("Nova pasta…", systemImage: "folder.badge.plus") }
+                    } label: { Image(systemName: "plus") }
                 }
             }
         }
         .refreshable { await load() }
         .task { await load() }
+        .sheet(isPresented: $showNewFile) {
+            NewRepoFileView(slug: slug, branch: branch, dir: path) { Task { await load() } }
+                .environmentObject(gh)
+        }
+        .sheet(isPresented: $showPicker) { FilesPicker { urls in upload(urls) } }
+        .sheet(item: $prompt) { p in NameSheet(p: p) }
         .confirmationDialog(
             "Apagar do repositório?",
             isPresented: Binding(get: { toDelete != nil }, set: { if !$0 { toDelete = nil } }),
@@ -314,15 +412,46 @@ struct RepoFileView: View {
     @EnvironmentObject var gh: GitHub
     @Environment(\.presentationMode) var pm
     @State private var text = ""
+    @State private var draft = ""
+    @State private var editing = false
     @State private var error = ""
     @State private var loading = true
     @State private var confirm = false
+    @State private var saving = false
+
+    func save() {
+        Task { @MainActor in
+            saving = true
+            defer { saving = false }
+            do {
+                try await gh.commitFiles(slug, branch: branch,
+                                         files: [(path: path, data: Data(draft.utf8))],
+                                         message: "Editar " + (path as NSString).lastPathComponent + " (CodeLab)")
+                text = draft
+                editing = false
+                error = ""
+                UINotificationFeedbackGenerator().notificationOccurred(.success)
+            } catch {
+                self.error = error.localizedDescription
+                UINotificationFeedbackGenerator().notificationOccurred(.error)
+            }
+        }
+    }
 
     var body: some View {
         Group {
             if loading {
                 VStack { Spacer(); ProgressView(); Spacer() }
-            } else if !error.isEmpty {
+            } else if editing {
+                VStack(spacing: 0) {
+                    if !error.isEmpty { Text(error).font(.footnote).foregroundColor(.red).padding(8) }
+                    TextEditor(text: $draft)
+                        .font(.system(size: 13, design: .monospaced))
+                        .textInputAutocapitalization(.never)
+                        .disableAutocorrection(true)
+                        .padding(.horizontal, 6)
+                }
+            } else if !error.isEmpty && text.isEmpty {
                 VStack { Spacer(); Text(error).foregroundColor(.secondary).padding(); Spacer() }
             } else {
                 ScrollView([.vertical, .horizontal]) {
@@ -338,9 +467,16 @@ struct RepoFileView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItemGroup(placement: .navigationBarTrailing) {
-                Button { UIPasteboard.general.string = text } label: { Image(systemName: "doc.on.doc") }
-                    .disabled(text.isEmpty)
-                Button(role: .destructive) { confirm = true } label: { Image(systemName: "trash") }
+                if editing {
+                    Button("Cancelar") { editing = false; error = "" }
+                    Button(saving ? "Salvando…" : "Salvar") { save() }.disabled(saving)
+                } else {
+                    Button { UIPasteboard.general.string = text } label: { Image(systemName: "doc.on.doc") }
+                        .disabled(text.isEmpty)
+                    Button { draft = text; editing = true } label: { Image(systemName: "pencil") }
+                        .disabled(loading || (text.isEmpty && !error.isEmpty))
+                    Button(role: .destructive) { confirm = true } label: { Image(systemName: "trash") }
+                }
             }
         }
         .task {
@@ -360,6 +496,146 @@ struct RepoFileView: View {
                 }
             }
             Button("Cancelar", role: .cancel) {}
+        }
+    }
+}
+
+struct NewRepoFileView: View {
+    let slug: String
+    let branch: String
+    let dir: String
+    let onDone: () -> Void
+    @EnvironmentObject var gh: GitHub
+    @Environment(\.presentationMode) var pm
+    @State private var name = ""
+    @State private var text = ""
+    @State private var message = ""
+    @State private var busy = false
+    @State private var error = ""
+
+    var fullPath: String {
+        let n = name.trimmingCharacters(in: CharacterSet(charactersIn: "/ "))
+        return (dir.isEmpty ? "" : dir + "/") + n
+    }
+
+    func create() {
+        Task { @MainActor in
+            busy = true
+            error = ""
+            defer { busy = false }
+            do {
+                let msg = message.trimmingCharacters(in: .whitespaces)
+                try await gh.commitFiles(slug, branch: branch, files: [(path: fullPath, data: Data(text.utf8))],
+                                         message: msg.isEmpty ? "Criar " + fullPath + " (CodeLab)" : msg)
+                UINotificationFeedbackGenerator().notificationOccurred(.success)
+                onDone()
+                pm.wrappedValue.dismiss()
+            } catch {
+                self.error = error.localizedDescription
+            }
+        }
+    }
+
+    var body: some View {
+        NavigationView {
+            Form {
+                Section(header: Text("Arquivo"), footer: Text("Pode incluir pastas, como src/Main.java. Vai para " + (dir.isEmpty ? "a raiz" : dir) + " na branch " + branch + ".")) {
+                    TextField("nome do arquivo", text: $name)
+                        .textInputAutocapitalization(.never)
+                        .disableAutocorrection(true)
+                }
+                Section(header: Text("Conteúdo")) {
+                    TextEditor(text: $text)
+                        .font(.system(size: 13, design: .monospaced))
+                        .frame(minHeight: 180)
+                        .textInputAutocapitalization(.never)
+                        .disableAutocorrection(true)
+                }
+                Section {
+                    TextField("mensagem do commit (opcional)", text: $message)
+                }
+                Section {
+                    Button(busy ? "Enviando…" : "Criar e enviar (commit)") { create() }
+                        .disabled(busy || name.trimmingCharacters(in: .whitespaces).isEmpty)
+                    if !error.isEmpty { Text(error).font(.footnote).foregroundColor(.red) }
+                }
+            }
+            .navigationTitle("Novo arquivo")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .navigationBarTrailing) { Button("Fechar") { pm.wrappedValue.dismiss() } } }
+        }
+    }
+}
+
+/// Escolher vários arquivos do aparelho (copiados para dentro do app ao escolher).
+struct FilesPicker: UIViewControllerRepresentable {
+    let onPick: ([URL]) -> Void
+
+    func makeCoordinator() -> Coordinator { Coordinator(onPick) }
+
+    func makeUIViewController(context: Context) -> UIDocumentPickerViewController {
+        let vc = UIDocumentPickerViewController(forOpeningContentTypes: [UTType.item], asCopy: true)
+        vc.allowsMultipleSelection = true
+        vc.delegate = context.coordinator
+        return vc
+    }
+
+    func updateUIViewController(_ uiViewController: UIDocumentPickerViewController, context: Context) {}
+
+    final class Coordinator: NSObject, UIDocumentPickerDelegate {
+        let onPick: ([URL]) -> Void
+        init(_ onPick: @escaping ([URL]) -> Void) { self.onPick = onPick }
+        func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
+            onPick(urls)
+        }
+    }
+}
+
+struct NewRepoView: View {
+    @EnvironmentObject var gh: GitHub
+    @Environment(\.presentationMode) var pm
+    @State private var name = ""
+    @State private var desc = ""
+    @State private var priv = true
+    @State private var busy = false
+    @State private var error = ""
+
+    func clean(_ s: String) -> String {
+        String(s.map { ($0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" || $0 == ".") ? $0 : "-" })
+    }
+
+    var body: some View {
+        NavigationView {
+            Form {
+                Section(header: Text("Repositório")) {
+                    TextField("nome", text: $name)
+                        .textInputAutocapitalization(.never)
+                        .disableAutocorrection(true)
+                    TextField("descrição (opcional)", text: $desc)
+                    Toggle("Privado", isOn: $priv)
+                }
+                Section {
+                    Button(busy ? "Criando…" : "Criar repositório") {
+                        Task { @MainActor in
+                            busy = true
+                            error = ""
+                            defer { busy = false }
+                            do {
+                                try await gh.createRepo(name: clean(name), isPrivate: priv, description: desc)
+                                UINotificationFeedbackGenerator().notificationOccurred(.success)
+                                pm.wrappedValue.dismiss()
+                            } catch {
+                                self.error = error.localizedDescription
+                            }
+                        }
+                    }
+                    .disabled(busy || clean(name).isEmpty)
+                    if !error.isEmpty { Text(error).font(.footnote).foregroundColor(.red) }
+                }
+            }
+            .navigationTitle("Novo repositório")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .navigationBarTrailing) { Button("Fechar") { pm.wrappedValue.dismiss() } } }
         }
     }
 }

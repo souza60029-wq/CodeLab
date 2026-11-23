@@ -69,7 +69,8 @@ Feito para funcionar bem em telas pequenas, a partir do iPhone 6s com iOS 15.
 - Envio do projeto (add, commit e push) direto do app.
 - **Aba Build**: escolha um .zip e o repositório numa lista com **busca e favoritos (★)**; a conta é a que você já conectou e a branch é a `main`, com um menu para trocar quando o repositório tem outras. O CodeLab envia tudo em **um único commit** (no estilo do ZipToGit), dispara o workflow, mostra as **etapas ao vivo** (abrir, enviar, iniciar, compilar, baixar) com o tempo decorrido e entrega o APK ou IPA pronto para instalar ou compartilhar. Mantém um histórico dos últimos builds.
 - **Perfil** com foto, nome e números da conta, **repositórios em cartões laterais** (favoritos primeiro) e atalho para abrir a pasta do CodeLab no app Arquivos.
-- **Abrir um repositório**: branch atual com menu para trocar, **Código** (pastas e arquivos; deslize ou segure para **apagar do repositório**, em um único commit), **Actions** (execuções, executar de novo, excluir) e **Artefatos** (baixar o .ipa/.apk, compartilhar ou excluir).
+- **Abrir um repositório**: branch atual com menu para trocar ou criar outra, prévia do **README**, **Código** (pastas e arquivos; **adicionar** arquivo novo, **enviar arquivos do aparelho**, criar pasta, **editar** um arquivo e **apagar do repositório**, sempre em um único commit), **Actions** (execuções, executar de novo, excluir) e **Artefatos** (baixar o .ipa/.apk, compartilhar ou excluir).
+- **Criar repositório** pelo app (botão + em "Ver todos").
 - **Baixar para o aparelho**: tanto pelo repositório quanto pelo cartão "Baixar do GitHub" na tela inicial. Pelo terminal também: `git clone usuario/repositorio`.
 - Execução do workflow e leitura do resultado dentro do app.
 
@@ -107,6 +108,10 @@ Uma vez só:
 4. Copie o **Client ID** e cole no app, em **Perfil → Entrar com GitHub**.
 
 Depois disso, basta tocar em **Entrar com GitHub** e fazer o login normalmente na página que abre.
+
+## Uso de memória
+
+O app foi pensado para aparelhos com pouca RAM: as abas só são carregadas quando você as abre pela primeira vez, a lista de repositórios e os textos do terminal têm tamanho limitado, o realce de código reaproveita as expressões já preparadas, o .zip é lido sem ser copiado para a memória e, quando o iOS avisa que a memória está acabando, o app limpa os caches e encurta o texto do terminal.
 
 ## Limites conhecidos
 

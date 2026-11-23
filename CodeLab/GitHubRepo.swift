@@ -242,3 +242,58 @@ extension GitHub {
         return dir
     }
 }
+
+extension GitHub {
+    /// Cria ou atualiza arquivos no repositório em um único commit.
+    func commitFiles(_ slug: String, branch: String, files: [(path: String, data: Data)], message: String) async throws {
+        guard !files.isEmpty else { throw GHError(msg: "Nenhum arquivo para enviar.") }
+        guard let head = try await headRef(slug, branch) else { throw GHError(msg: "Branch não encontrada.") }
+        let (cc, cd) = try await call("GET", "/repos/" + slug + "/git/commits/" + head)
+        guard cc == 200, let baseTree = (GitHub.json(cd)["tree"] as? [String: Any])?["sha"] as? String else {
+            throw apiError("Erro ao ler o commit", cc, cd)
+        }
+        var entries: [[String: Any]] = []
+        for f in files {
+            if f.data.count > 95_000_000 { throw GHError(msg: f.path + " passa de 95 MB (limite do GitHub: 100 MB).") }
+            if !f.data.isEmpty, !f.data.contains(0), let text = String(data: f.data, encoding: .utf8) {
+                entries.append(["path": f.path, "mode": "100644", "type": "blob", "content": text])
+            } else {
+                let (bc, bd) = try await call("POST", "/repos/" + slug + "/git/blobs",
+                                              body: ["content": f.data.base64EncodedString(), "encoding": "base64"])
+                guard bc == 201, let bsha = GitHub.json(bd)["sha"] as? String else {
+                    throw apiError("Falha ao enviar " + f.path, bc, bd)
+                }
+                entries.append(["path": f.path, "mode": "100644", "type": "blob", "sha": bsha])
+            }
+        }
+        var lastTree = baseTree
+        var i = 0
+        while i < entries.count {
+            let j = min(entries.count, i + 100)
+            let (tc, td) = try await call("POST", "/repos/" + slug + "/git/trees",
+                                          body: ["base_tree": lastTree, "tree": Array(entries[i..<j])])
+            guard tc == 201, let t = GitHub.json(td)["sha"] as? String else { throw apiError("Falha ao montar os arquivos", tc, td) }
+            lastTree = t
+            i = j
+        }
+        let (mc, md) = try await call("POST", "/repos/" + slug + "/git/commits",
+                                      body: ["message": message, "tree": lastTree, "parents": [head]])
+        guard mc == 201, let sha = GitHub.json(md)["sha"] as? String else { throw apiError("Falha ao criar o commit", mc, md) }
+        let (uc, ud) = try await call("PATCH", "/repos/" + slug + "/git/refs/heads/" + branch, body: ["sha": sha])
+        guard uc == 200 else { throw apiError("Falha ao atualizar a branch", uc, ud) }
+    }
+
+    func createBranch(_ slug: String, from: String, name: String) async throws {
+        guard let head = try await headRef(slug, from) else { throw GHError(msg: "Branch de origem não encontrada.") }
+        let (c, d) = try await call("POST", "/repos/" + slug + "/git/refs", body: ["ref": "refs/heads/" + name, "sha": head])
+        guard c == 201 else { throw apiError("Não consegui criar a branch", c, d) }
+    }
+
+    func createRepo(name: String, isPrivate: Bool, description: String) async throws {
+        var body: [String: Any] = ["name": name, "private": isPrivate, "auto_init": true]
+        if !description.isEmpty { body["description"] = description }
+        let (c, d) = try await call("POST", "/user/repos", body: body)
+        guard c == 201 else { throw apiError("Não consegui criar o repositório", c, d) }
+        await loadAllRepos()
+    }
+}

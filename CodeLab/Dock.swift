@@ -56,6 +56,7 @@ final class AppState: ObservableObject {
     @Published var coding = false
     @Published var keyboard = false
     @Published var blurPhase: CGFloat = 0
+    @Published var visited: Set<Tab> = [.home]
 
     var dockMini: Bool { coding && tab == .home }
     var dockVisible: Bool { !keyboard && !(dockMini && UserDefaults.standard.bool(forKey: "hideDockCoding")) }
@@ -64,6 +65,7 @@ final class AppState: ObservableObject {
     /// Troca de aba. Com animações fluidas, usa mola e um borrão de movimento que cresce no meio da transição.
     func select(_ t: Tab) {
         guard t != tab else { return }
+        visited.insert(t)
         if Prefs.fluid {
             withAnimation(.spring(response: 0.42, dampingFraction: 0.86)) {
                 tab = t
@@ -82,6 +84,9 @@ final class AppState: ObservableObject {
         })
         observers.append(nc.addObserver(forName: UIResponder.keyboardWillHideNotification, object: nil, queue: .main) { [weak self] _ in
             self?.keyboard = false
+        })
+        observers.append(nc.addObserver(forName: UIApplication.didReceiveMemoryWarningNotification, object: nil, queue: .main) { _ in
+            URLCache.shared.removeAllCachedResponses()
         })
     }
 }
@@ -146,9 +151,15 @@ struct RootView: View {
         ZStack(alignment: .bottom) {
             ZStack {
                 layer(.home) { HomeView() }
-                layer(.build) { NavigationView { BuildView() }.navigationViewStyle(.stack) }
-                layer(.terminal) { NavigationView { TerminalView() }.navigationViewStyle(.stack) }
-                layer(.profile) { NavigationView { ProfileView() }.navigationViewStyle(.stack) }
+                layer(.build) {
+                    if app.visited.contains(.build) { NavigationView { BuildView() }.navigationViewStyle(.stack) }
+                }
+                layer(.terminal) {
+                    if app.visited.contains(.terminal) { NavigationView { TerminalView() }.navigationViewStyle(.stack) }
+                }
+                layer(.profile) {
+                    if app.visited.contains(.profile) { NavigationView { ProfileView() }.navigationViewStyle(.stack) }
+                }
             }
             .modifier(MotionBlur(phase: Prefs.tabBlur ? app.blurPhase : 0))
 
@@ -179,17 +190,19 @@ struct GlassPill: View {
         ZStack(alignment: .top) {
             if glass {
                 Capsule()
-                    .fill(LinearGradient(colors: [Color.accentColor.opacity(0.24), Color.accentColor.opacity(0.08)],
+                    .fill(LinearGradient(colors: [Color.accentColor.opacity(0.20), Color.accentColor.opacity(0.07)],
                                          startPoint: .top, endPoint: .bottom))
+                // borda de vidro: aqui o que passa por baixo fica desfocado
                 Capsule()
-                    .fill(.ultraThinMaterial)
-                    .mask(Capsule().strokeBorder(Color.white, lineWidth: 10).blur(radius: 3.5))
+                    .strokeBorder(.ultraThinMaterial, lineWidth: 9)
+                // reflexo no topo
                 Capsule()
-                    .fill(LinearGradient(colors: [Color.white.opacity(0.55), Color.white.opacity(0)],
+                    .fill(LinearGradient(colors: [Color.white.opacity(0.45), Color.white.opacity(0)],
                                          startPoint: .top, endPoint: .bottom))
-                    .frame(height: height * 0.42)
-                    .padding(.horizontal, 9)
+                    .frame(height: height * 0.4)
+                    .padding(.horizontal, 10)
                     .padding(.top, 3)
+                // relevo
                 Capsule()
                     .strokeBorder(LinearGradient(colors: [Color.white.opacity(0.85), Color.accentColor.opacity(0.35), Color.white.opacity(0.2)],
                                                  startPoint: .topLeading, endPoint: .bottomTrailing),
@@ -199,9 +212,7 @@ struct GlassPill: View {
             }
         }
         .frame(width: width, height: height)
-        .shadow(color: Color.accentColor.opacity(glass ? 0.35 : 0), radius: 6, x: 0, y: 3)
-        .scaleEffect(x: 1, y: 1 - min(0.14, stretch / 160))
-        .blur(radius: min(2.2, stretch / 24))
+        .scaleEffect(x: 1, y: 1 - min(0.12, stretch / 180))
     }
 }
 
@@ -325,6 +336,15 @@ struct DockView: View {
                 if !mini {
                     GlassPill(width: max(8, pillR - pillL), height: 42, glass: Prefs.glassPill, stretch: stretch)
                         .offset(x: pillL)
+                        .allowsHitTesting(false)
+                    // o item atual aparece nítido por cima da gota; os que ela atravessa ficam desfocados nas bordas
+                    let ti = app.tab.rawValue
+                    let cellL = CGFloat(ti) * cw
+                    let overlap = min(1, max(0, (min(pillR, cellL + cw) - max(pillL, cellL)) / max(1, cw - 2 * inset)))
+                    cell(entries[ti])
+                        .frame(width: cw, height: 52)
+                        .offset(x: cellL)
+                        .opacity(Double(overlap))
                         .allowsHitTesting(false)
                 }
             }
@@ -566,6 +586,15 @@ struct ProfileView: View {
                                         RepoCard(repo: r, fav: favs.contains(r.fullName))
                                     }
                                     .buttonStyle(PressableStyle())
+                                    .contextMenu {
+                                        Button {
+                                            Favorites.toggle(r.fullName)
+                                            favs = Favorites.list()
+                                        } label: {
+                                            Label(favs.contains(r.fullName) ? "Desfavoritar" : "Favoritar",
+                                                  systemImage: favs.contains(r.fullName) ? "star.slash" : "star")
+                                        }
+                                    }
                                 }
                             }
                             .padding(.horizontal, 16)

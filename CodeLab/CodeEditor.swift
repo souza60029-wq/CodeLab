@@ -438,6 +438,14 @@ struct CodeEditor: UIViewRepresentable {
             return r
         }
 
+        static var regexCache: [String: NSRegularExpression] = [:]
+        static func regex(_ p: String) -> NSRegularExpression? {
+            if let r = regexCache[p] { return r }
+            guard let r = try? NSRegularExpression(pattern: p, options: []) else { return nil }
+            regexCache[p] = r
+            return r
+        }
+
         func highlight(_ tv: UITextView) {
             if tv.markedTextRange != nil { return }
             let storage = tv.textStorage
@@ -446,9 +454,10 @@ struct CodeEditor: UIViewRepresentable {
             storage.beginEditing()
             storage.setAttributes([.font: font, .foregroundColor: UIColor.label], range: full)
             if storage.length < 60000 {
+                let whole = storage.string
                 for (pattern, color) in rules() {
-                    guard let re = try? NSRegularExpression(pattern: pattern, options: []) else { continue }
-                    re.enumerateMatches(in: storage.string, options: [], range: full) { m, _, _ in
+                    guard let re = Coordinator.regex(pattern) else { continue }
+                    re.enumerateMatches(in: whole, options: [], range: full) { m, _, _ in
                         if let r = m?.range { storage.addAttribute(.foregroundColor, value: color, range: r) }
                     }
                 }

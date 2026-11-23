@@ -7,7 +7,7 @@ enum Zip {
     @discardableResult
     static func extract(_ zipURL: URL, to dest: URL) throws -> Int {
         let data = try Data(contentsOf: zipURL, options: .mappedIfSafe)
-        let b = [UInt8](data)
+        let b = data   // sem copiar o arquivo inteiro para um array (economiza RAM)
         func u16(_ o: Int) -> Int { Int(b[o]) | (Int(b[o + 1]) << 8) }
         func u32(_ o: Int) -> Int { u16(o) | (u16(o + 2) << 16) }
 

@@ -548,6 +548,9 @@ struct TerminalView: View {
         .sheet(isPresented: $showHelp) {
             CheatSheet { text in inject = text }
         }
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.didReceiveMemoryWarningNotification)) { _ in
+            if m.out.count > 8000 { m.out = String(m.out.suffix(6000)) }
+        }
         .onAppear {
             m.gh = gh
             if !m.started {
